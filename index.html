@@ -495,7 +495,7 @@
     $('#sub').textContent = isAd
       ? (it.ad&&it.ad.type==='audio' ? 'Tu anuncio' : 'Locutor AI · voz')
       : (it.url ? (it.by||'Tu música') : (it.by? it.by+' · Librería (vista previa)' : 'Librería (vista previa)'));
-    $('#nosnd').hidden = isAd ? true : !!it.url;
+    $('#nosnd').hidden = true;
   }
 
   function playItem(){
