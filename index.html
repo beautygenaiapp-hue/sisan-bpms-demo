@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BPMS Online — Demostración</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Consola de transmisión (dark, técnica). Deck "al aire" + cola en vivo con
+     progreso, reloj y VU en tiempo real. Tipos: Barlow (UI), Barlow Semi
+     Condensed (titulares), IBM Plex Mono (tiempos/niveles). Compromiso: un solo
+     mundo oscuro, estilo software de radio. */
+  :root{
+    --bg:#0f131b; --panel:#161b25; --panel-2:#1c2330; --line:#28303d; --line-2:#394354;
+    --ink:#e9edf4; --ink-2:#a7b1c2; --ink-3:#6c7688;
+    --accent:#f4a63a; --accent-ink:#1b1305;      /* música / primario */
+    --air:#ef4e3a; --air-soft:#2a1411;           /* ON AIR / anuncio */
+    --ok:#46cf82;                                 /* estado / nivel */
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg); color:var(--ink); font-family:"Barlow",-apple-system,"Segoe UI",sans-serif; font-size:15px; line-height:1.45; -webkit-font-smoothing:antialiased}
+  h1,h2,h3,.disp{font-family:"Barlow Semi Condensed","Barlow",sans-serif; letter-spacing:-.01em}
+  .mono{font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums}
+  button{font-family:inherit}
+  .shell{max-width:1080px; margin:0 auto; padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+  /* topbar */
+  .topbar{position:sticky; top:env(safe-area-inset-top,0px); z-index:30; background:rgba(15,19,27,.86); backdrop-filter:blur(10px); border-bottom:1px solid var(--line)}
+  body::before{content:""; position:fixed; inset:0 0 auto; height:env(safe-area-inset-top,0px); background:var(--bg); z-index:31}
+  .topin{display:flex; align-items:center; gap:12px; min-height:58px; flex-wrap:wrap; padding-block:9px}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:700; font-size:16px}
+  .brand .dot{width:28px;height:28px;border-radius:7px;background:var(--accent); display:grid; place-items:center; color:var(--accent-ink); font-family:"Barlow Semi Condensed"; font-weight:700; font-size:17px}
+  .brand small{display:block; font-weight:600; font-size:10px; letter-spacing:.18em; color:var(--ink-3); margin-top:-3px}
+  .roles{display:flex; gap:3px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:3px}
+  .roles button{border:0; background:transparent; color:var(--ink-2); font-weight:600; font-size:13px; padding:7px 13px; border-radius:7px; cursor:pointer; white-space:nowrap}
+  .roles button[aria-selected="true"]{background:var(--panel-2); color:var(--ink)}
+  .spacer{flex:1 1 10px}
+  .clock{font-size:15px; color:var(--ink-2); letter-spacing:.04em}
+  .flag{font-size:10px; color:var(--accent); border:1px solid color-mix(in srgb,var(--accent) 40%,transparent); padding:4px 8px; border-radius:6px; font-weight:700; letter-spacing:.08em}
+
+  .view{padding:18px 0 90px} .view[hidden]{display:none!important}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:14px}
+  .eyebrow{font-size:10.5px; letter-spacing:.16em; color:var(--ink-3); font-weight:700}
+  .note{font-size:12px;color:var(--ink-3)}
+  .btn{border:0; border-radius:9px; padding:10px 15px; font-weight:600; font-size:14px; cursor:pointer; display:inline-flex; align-items:center; gap:8px; justify-content:center}
+  .btn.primary{background:var(--accent); color:var(--accent-ink)} .btn.ghost{background:var(--panel-2); color:var(--ink); border:1px solid var(--line-2)} .btn.sm{padding:7px 11px; font-size:13px}
+  input,textarea,select{font-family:inherit; font-size:14px; color:var(--ink); background:var(--panel-2); border:1px solid var(--line-2); border-radius:9px; padding:9px 11px; width:100%}
+  input[type=time]{width:auto} textarea{resize:vertical;min-height:62px}
+  label.fl{display:block; font-size:12px; font-weight:600; color:var(--ink-2); margin:0 0 5px}
+  table{width:100%; border-collapse:collapse; font-size:13.5px}
+  th{text-align:left; font-size:10.5px; letter-spacing:.07em; color:var(--ink-3); font-weight:700; padding:8px 10px; border-bottom:1px solid var(--line-2)}
+  td{padding:10px; border-top:1px solid var(--line)} .tnum{font-variant-numeric:tabular-nums}
+  .tag{font-size:11px; font-weight:700; padding:2px 8px; border-radius:5px} .tag.ok{color:var(--ok); background:color-mix(in srgb,var(--ok) 16%,transparent)} .tag.off{color:var(--ink-3); background:var(--panel-2)}
+
+  /* hero */
+  .hero{padding:20px 0 16px; border-bottom:1px solid var(--line); margin-bottom:16px}
+  .hero h1{font-size:clamp(27px,5.4vw,46px); line-height:1.04; margin:6px 0 10px; font-weight:700}
+  .hero h1 em{font-style:normal; color:var(--accent)}
+  .hero p{font-size:clamp(14px,1.7vw,17px); color:var(--ink-2); max-width:56ch; margin:0 0 14px}
+  .hero-cta{display:flex; gap:14px; align-items:center; flex-wrap:wrap} .trybadge{font-size:13px;font-weight:600;color:var(--ok)}
+
+  .acct{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .acct h2{margin:0;font-size:20px;font-weight:700} .acct .note{margin-top:1px}
+  .plan{font-size:12px;font-weight:700;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);padding:4px 10px;border-radius:20px}
+
+  .infobar{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-radius:11px;background:var(--panel);border:1px solid var(--line);margin-bottom:12px;font-size:12.5px;color:var(--ink-2)}
+  .infobar b{color:var(--ink)}
+
+  /* DECK */
+  .deck{padding:16px 18px; margin-bottom:12px; position:relative; overflow:hidden}
+  .deck.adair{border-color:color-mix(in srgb,var(--air) 55%,var(--line))}
+  .deck-top{display:flex; gap:14px; align-items:center}
+  .cover{width:74px;height:74px;border-radius:11px;flex:none;position:relative;overflow:hidden;background:linear-gradient(145deg,#2a3344,#171d28);display:grid;place-items:center}
+  .cover .ico{font-size:30px;filter:grayscale(.1)}
+  .deck.adair .cover{background:linear-gradient(145deg,var(--air),#5a1b14)}
+  .dmeta{flex:1;min-width:0}
+  .kind{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--accent)}
+  .deck.adair .kind{color:var(--air)}
+  .tally{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .deck.adair .tally{background:var(--air)}
+  .playing .tally{animation:blink 1.4s infinite}
+  @keyframes blink{50%{opacity:.25}} @media (prefers-reduced-motion:reduce){.playing .tally{animation:none}}
+  .dtitle{font-size:22px;font-weight:700;font-family:"Barlow Semi Condensed";white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:2px 0 1px}
+  .dsub{font-size:13px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nosnd{margin-top:6px;display:inline-block;font-size:11px;font-weight:600;color:var(--accent);background:color-mix(in srgb,var(--accent) 13%,transparent);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);padding:3px 9px;border-radius:6px}
+  .nosnd b{font-weight:700}
+  .vu{display:flex;gap:3px;align-items:flex-end;height:40px;flex:none}
+  .vu i{width:5px;border-radius:1px;height:16%;background:linear-gradient(to top,var(--ok),var(--accent) 62%,var(--air));opacity:.55}
+  .playing .vu i{animation:vu .55s ease-in-out infinite alternate;opacity:1}
+  .vu i:nth-child(1){animation-delay:0s}.vu i:nth-child(2){animation-delay:.12s;animation-duration:.42s}.vu i:nth-child(3){animation-delay:.05s;animation-duration:.6s}.vu i:nth-child(4){animation-delay:.18s;animation-duration:.5s}.vu i:nth-child(5){animation-delay:.09s;animation-duration:.47s}
+  @keyframes vu{to{height:100%}} @media (prefers-reduced-motion:reduce){.playing .vu i{animation:none;height:70%}}
+
+  .progress{display:flex;align-items:center;gap:12px;margin-top:14px}
+  .pbar{flex:1;height:7px;background:var(--line);border-radius:4px;overflow:hidden}
+  .pfill{height:100%;width:0%;background:var(--accent);transition:width .18s linear;border-radius:4px}
+  .deck.adair .pfill{background:var(--air)}
+  .ptime{font-size:13px;color:var(--ink-2);min-width:42px}
+
+  .transport{display:flex;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap}
+  .tp{width:44px;height:44px;border-radius:50%;border:1px solid var(--line-2);background:var(--panel-2);color:var(--ink);font-size:16px;cursor:pointer;display:grid;place-items:center}
+  .tp.main{width:56px;height:56px;background:var(--accent);color:var(--accent-ink);border:0;font-size:22px}
+  .deck.adair .tp.main{background:var(--air);color:#fff}
+  .vol{display:flex;align-items:center;gap:8px;color:var(--ink-3);flex:1 1 130px;min-width:120px}
+  .vol input[type=range]{accent-color:var(--accent);padding:0;flex:1}
+  .onair{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;letter-spacing:.1em;color:var(--ink-3);border:1px solid var(--line-2);border-radius:8px;padding:7px 12px}
+  .onair.on{color:var(--air);border-color:color-mix(in srgb,var(--air) 50%,transparent)}
+  .onair .lamp{width:9px;height:9px;border-radius:50%;background:currentColor;box-shadow:0 0 0 0 currentColor}
+  .onair.on .lamp{animation:lamp 1.3s infinite}
+  @keyframes lamp{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--air) 60%,transparent)}70%{box-shadow:0 0 0 8px transparent}} @media (prefers-reduced-motion:reduce){.onair.on .lamp{animation:none}}
+
+  /* LOG / COLA */
+  .log{padding:14px 16px;margin-bottom:12px}
+  .log-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+  .log-head h3{margin:0;font-size:14px;letter-spacing:.04em}
+  .cue{font-size:12px;color:var(--ink-2)} .cue b{color:var(--accent)}
+  .row{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;border:1px solid transparent}
+  .row + .row{margin-top:3px}
+  .row.cur{background:color-mix(in srgb,var(--accent) 12%,transparent);border-color:color-mix(in srgb,var(--accent) 35%,transparent)}
+  .row.ad.cur{background:var(--air-soft);border-color:color-mix(in srgb,var(--air) 45%,transparent)}
+  .row .ic{width:26px;height:26px;border-radius:7px;flex:none;display:grid;place-items:center;font-size:13px;background:var(--panel-2);color:var(--ink-2)}
+  .row.cur .ic{background:var(--accent);color:var(--accent-ink)} .row.ad.cur .ic{background:var(--air);color:#fff}
+  .row .g{flex:1;min-width:0} .row .g b{display:block;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600} .row .g span{font-size:11px;color:var(--ink-3)}
+  .row .dur{font-size:12.5px;color:var(--ink-3)}
+  .row.cur .dur{color:var(--accent)} .row.ad.cur .dur{color:var(--air)}
+  .nowtag{font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--accent)} .row.ad.cur .nowtag{color:var(--air)}
+
+  /* tabs */
+  .subtabs{display:flex;gap:3px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:3px;margin:14px 0}
+  .subtabs button{flex:1;border:0;background:transparent;color:var(--ink-2);font-weight:600;font-size:14px;padding:10px;border-radius:8px;cursor:pointer}
+  .subtabs button[aria-selected="true"]{background:var(--panel-2);color:var(--ink)}
+  .tabpanel[hidden]{display:none!important} .tabpanel{display:grid;gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .card h3{margin:0 0 2px;font-size:15px} .card .sub{color:var(--ink-3);font-size:12px;margin:0 0 12px}
+  .seg{display:flex;gap:3px;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:3px;flex-wrap:wrap}
+  .seg button{flex:1;min-width:120px;border:0;background:transparent;color:var(--ink-2);font-weight:600;font-size:13px;padding:8px;border-radius:7px;cursor:pointer}
+  .seg button[aria-selected="true"]{background:var(--panel);color:var(--ink)}
+  .drop{display:block;border:1.5px dashed color-mix(in srgb,var(--accent) 55%,var(--line-2));border-radius:11px;padding:16px;text-align:center;color:var(--ink-2);font-size:13.5px;cursor:pointer;background:color-mix(in srgb,var(--accent) 7%,transparent)} .drop b{color:var(--accent)}
+  .amb{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .amb button{border:1px solid var(--line-2);background:var(--panel-2);border-radius:10px;padding:10px;text-align:left;cursor:pointer;color:var(--ink)}
+  .amb button[aria-pressed="true"]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)} .amb b{display:block;font-size:13.5px} .amb span{font-size:11.5px;color:var(--ink-3)}
+  .list{display:grid;gap:7px}
+  .item{display:flex;align-items:center;gap:10px;padding:9px 11px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;font-size:13px}
+  .item .g{flex:1;min-width:0} .item .g b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .item .g span{font-size:11px;color:var(--ink-3)}
+  .iconbtn{border:0;background:transparent;color:var(--ink-3);cursor:pointer;font-size:15px;padding:4px} .empty{color:var(--ink-3);font-size:13px;text-align:center;padding:14px}
+  .sw-toggle{position:relative;width:40px;height:23px;border-radius:12px;background:var(--line-2);cursor:pointer;border:0;flex:none} .sw-toggle[aria-pressed="true"]{background:var(--ok)} .sw-toggle::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:#fff;transition:left .15s} .sw-toggle[aria-pressed="true"]::after{left:19px}
+  .days{display:flex;gap:6px;flex-wrap:wrap} .days button{width:40px;height:40px;border-radius:10px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--ink-2);font-weight:700;cursor:pointer;font-size:13px} .days button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+  .fieldrow{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end} .fieldrow .f{display:flex;flex-direction:column;gap:5px}
+  .item2{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;margin-bottom:7px;overflow:hidden}
+  .item2 .item{background:transparent;border:0;border-radius:0;margin:0}
+  .chip{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px;white-space:nowrap}
+  .chip.ok{color:var(--ok);background:color-mix(in srgb,var(--ok) 16%,transparent)}
+  .chip.warn{color:var(--accent);background:color-mix(in srgb,var(--accent) 15%,transparent)}
+  .chip.off{color:var(--ink-3);background:var(--panel)}
+  .schsum{font-size:10.5px;color:var(--ink-3)}
+  .iconbtn.prog{color:var(--accent)}
+  .editwrap{padding:11px 12px;border-top:1px dashed var(--line-2);background:var(--panel)}
+  .sched .sgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .sched .dayp{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
+  .sched .dayp button{width:34px;height:34px;border-radius:8px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--ink-2);font-weight:700;cursor:pointer;font-size:12px}
+  .sched .dayp button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+  .sched .freqrow{margin-top:10px;font-size:13px;color:var(--ink-2);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .sched .freqrow input{width:66px}
+  .gform{border:1px solid var(--line-2);border-radius:10px;padding:13px;background:var(--panel-2);margin-bottom:10px}
+  .memlist{display:flex;flex-direction:column;gap:5px;max-height:170px;overflow:auto;margin-top:6px}
+  .memrow{display:flex;align-items:center;gap:9px;font-size:13px;padding:7px 9px;background:var(--panel);border:1px solid var(--line);border-radius:8px;cursor:pointer}
+  .memrow input{width:auto}
+  .grp{display:flex;align-items:center;gap:10px;padding:10px 11px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;margin-bottom:6px}
+  .grp .g{flex:1;min-width:0} .grp .g b{display:block;font-size:13.5px}
+  .bulkbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 11px;background:color-mix(in srgb,var(--accent) 8%,var(--panel-2));border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line-2));border-radius:10px;margin-bottom:10px}
+  .bulkbar .cnt{font-size:12px;color:var(--ink-2);font-weight:600}
+  .bulkbar .lnk{font-size:12.5px;color:var(--accent);cursor:pointer;background:none;border:0;padding:0;font-weight:700}
+  .bulkbar .bspacer{flex:1}
+  .item2 .item .msel{width:auto;flex:none;margin:0 2px 0 0;cursor:pointer}
+  .bulkedit{margin:0 0 10px;padding:12px;border:1px solid var(--line-2);border-radius:10px;background:var(--panel)}
+  .brand .logoplate{background:#fff;border-radius:7px;padding:4px 8px;display:inline-flex;align-items:center;flex:none}
+  .brand .logoplate img{height:26px;display:block}
+  .brand .bpms{font-weight:700;font-size:15px} .brand .bpms em{font-style:normal;color:var(--accent)}
+  .welcome{display:flex;align-items:center;gap:18px;flex-wrap:wrap;justify-content:center;text-align:center;background:linear-gradient(180deg,#ffffff,#eef1f5);border:1px solid var(--line);border-radius:14px;padding:16px 20px;margin-top:16px}
+  .welcome .wlogo{height:54px;display:block}
+  .welcome p{margin:0;color:#242a33;font-size:14px;font-weight:600;max-width:46ch}
+  @media (max-width:560px){ .welcome .wlogo{height:42px} }
+  .statusline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 13px;border-radius:10px;background:var(--panel-2);border:1px solid var(--line)}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;padding:4px 10px;border-radius:20px} .pill.ok{color:var(--ok);background:color-mix(in srgb,var(--ok) 15%,transparent)} .pill.warn{color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+  .pulse{width:8px;height:8px;border-radius:50%;background:currentColor;animation:lamp 1.6s infinite}
+  .edu{padding:14px 16px;border:1px solid color-mix(in srgb,var(--accent) 25%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--accent) 7%,transparent)} .edu p{margin:6px 0 0;color:var(--ink-2);font-size:13px} .edu .eyebrow{color:var(--accent)}
+
+  .vhead{margin:4px 0 16px} .vhead h1{font-size:clamp(22px,3vw,28px);margin:0 0 4px;font-weight:700} .vhead p{margin:0;color:var(--ink-2);max-width:60ch}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:11px} .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px} .kpi .l{font-size:11px;color:var(--ink-3);font-weight:600} .kpi .v{font-size:23px;font-weight:700;font-family:"Barlow Semi Condensed";margin-top:3px} .kpi .v small{font-size:12px;color:var(--ink-3)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px} .refbox{display:flex;gap:8px;align-items:center;background:var(--panel-2);border:1px solid var(--line-2);border-radius:10px;padding:6px 6px 6px 13px} .refbox code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+  .split{display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+  .margin-bar{height:9px;border-radius:5px;background:var(--line);overflow:hidden;display:flex} .lgd{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-2);margin-top:8px} .lgd span{display:inline-flex;gap:6px;align-items:center} .sw{width:10px;height:10px;border-radius:3px}
+  @media (max-width:760px){.two{grid-template-columns:1fr} .kpis{grid-template-columns:repeat(2,1fr)} .amb{grid-template-columns:1fr} .vu{display:none}}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="topbar"><div class="shell topin">
+  <div class="brand"><span class="logoplate"><img src="logo.png" alt="Sisan Group Communications"></span><span class="bpms">BPMS <em>Online</em></span></div>
+  <div class="roles" role="tablist" id="roles">
+    <button role="tab" aria-selected="true" data-role="cliente">Cliente</button>
+    <button role="tab" aria-selected="false" data-role="afiliado">Afiliado</button>
+    <button role="tab" aria-selected="false" data-role="revendedor">Revendedor</button>
+  </div>
+  <div class="spacer"></div>
+  <span class="clock mono" id="clock">--:--:--</span>
+  <span class="flag">PROTOTIPO</span>
+</div></div>
+
+<div class="shell">
+  <section class="view" id="v-cliente">
+    <div class="welcome"><img class="wlogo" src="logo.png" alt="Sisan Group Communications"><p>Bienvenido a la demostración de <b>BPMS Online</b> — música y anuncios para tu negocio, por Sisan Group Communications.</p></div>
+    <div class="hero">
+      <span class="eyebrow">SERVICIO ONLINE · SIN EQUIPO · POR UN URL</span>
+      <h1>Tu música que vende, <em>al aire</em> en un enlace.</h1>
+      <p>Una consola que alterna música y anuncios sola, y te deja ver en vivo lo que suena: el progreso, la cola y el nivel, en tiempo real.</p>
+      <div class="hero-cta">
+        <button class="btn primary" onclick="document.getElementById('deck').scrollIntoView({behavior:'smooth'})">Registrarme · $39.99/mes</button>
+        <span class="trybadge">▼ Dale play y mira la consola en vivo</span>
+      </div>
+    </div>
+
+    <div class="acct">
+      <div><h2>Supermercado Ejemplo</h2><div class="note">Consola BPMS · en línea</div></div>
+      <span class="plan">Plan $39.99/mes</span>
+    </div>
+
+    <div class="infobar"><span>🎧</span><span>Demostración con contenido real ya cargado: <b>15 canciones del repertorio Sisan</b> (clips de 30s) y <b>4 anuncios</b>, programados. Dale <b>play</b> y escucha cómo se alternan música y anuncios en tiempo real. En Programación verás un grupo de temporada de ejemplo.</span></div>
+
+    <!-- DECK -->
+    <div class="panel deck playing" id="deck">
+      <div class="deck-top">
+        <div class="cover"><span class="ico" id="cover">🎵</span></div>
+        <div class="dmeta">
+          <span class="kind" id="kind"><span class="tally"></span> CANCIÓN</span>
+          <div class="dtitle" id="title">—</div>
+          <div class="dsub" id="sub">Dale play para abrir la rotación</div>
+          <div class="nosnd" id="nosnd" hidden>▶ Sin audio — sube tu MP3 para <b>escuchar</b> la música</div>
+        </div>
+        <div class="vu" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
+      <div class="progress">
+        <span class="ptime mono" id="tcur">0:00</span>
+        <div class="pbar"><div class="pfill" id="pfill"></div></div>
+        <span class="ptime mono" id="ttot" style="text-align:right">0:00</span>
+      </div>
+      <div class="transport">
+        <button class="tp" id="prev">⏮</button>
+        <button class="tp main" id="play">▶</button>
+        <button class="tp" id="next">⏭</button>
+        <div class="vol">🔊 <input id="vol" type="range" min="0" max="100" value="80"></div>
+        <div class="onair" id="onair"><span class="lamp"></span> EN ESPERA</div>
+      </div>
+    </div>
+
+    <!-- COLA EN VIVO -->
+    <div class="panel log">
+      <div class="log-head">
+        <h3>EN COLA · música y anuncios</h3>
+        <span class="cue" id="cue"></span>
+      </div>
+      <div id="rows"></div>
+    </div>
+
+    <div class="subtabs" id="subtabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="musica">Música</button>
+      <button role="tab" aria-selected="false" data-tab="anuncios">Anuncios</button>
+      <button role="tab" aria-selected="false" data-tab="prog">Programación</button>
+    </div>
+
+    <div class="tabpanel" id="tab-musica">
+      <div class="card">
+        <h3>Tu música</h3>
+        <p class="sub">Sube tus MP3. Cada canción se puede programar con ⏱ (fechas, días y horas).</p>
+        <label class="drop" for="file"><b>⬆ Sube tu música (MP3)</b> — arrastra o toca</label>
+        <input id="file" type="file" accept="audio/*" multiple hidden>
+        <div class="seg" id="srcSeg" role="tablist" style="margin-top:12px">
+          <button role="tab" aria-selected="false" data-src="lib">Librería Sisan</button>
+          <button role="tab" aria-selected="true" data-src="mine">Mi música</button>
+        </div>
+        <div id="src-lib" hidden style="margin-top:12px">
+          <div class="amb" id="amb">
+            <button aria-pressed="true" data-amb="variada"><b>Variada</b><span>Mezcla para vender</span></button>
+            <button aria-pressed="false" data-amb="retail"><b>Retail</b><span>Energía</span></button>
+            <button aria-pressed="false" data-amb="restaurante"><b>Restaurante</b><span>Ambiente</span></button>
+            <button aria-pressed="false" data-amb="pico"><b>Hora pico</b><span>Ritmo alto</span></button>
+          </div>
+        </div>
+        <div id="src-mine" style="margin-top:12px">
+          <div class="bulkbar" id="bulkMus" hidden><button type="button" class="lnk" id="musSelAll">Seleccionar todas</button><span class="cnt" id="musCnt">0 seleccionadas</span><span class="bspacer"></span><button class="btn primary sm" id="musSchedBtn" disabled>📅 Programar juntas</button></div>
+          <div class="bulkedit" id="musBulkEdit" hidden></div>
+          <div class="list" id="uplist"></div>
+        </div>
+      </div>
+      <div class="edu"><div class="eyebrow">POR QUÉ FUNCIONA</div><p><b>La música que vende, no la que te gusta.</b> El repertorio está curado para el punto de venta: el ritmo y el ambiente hacen que tus clientes compren más.</p></div>
+    </div>
+
+    <div class="tabpanel" id="tab-prog" hidden>
+      <div class="card">
+        <h3>Horario general de la tienda</h3>
+        <p class="sub">Dentro del horario suena; fuera, silencio. Aplica a todo.</p>
+        <div class="statusline" id="schStatus"></div>
+        <label class="fl" style="margin-top:14px">Días que abre</label>
+        <div class="days" id="days"><button data-d="mon" aria-pressed="true">L</button><button data-d="tue" aria-pressed="true">M</button><button data-d="wed" aria-pressed="true">X</button><button data-d="thu" aria-pressed="true">J</button><button data-d="fri" aria-pressed="true">V</button><button data-d="sat" aria-pressed="true">S</button><button data-d="sun" aria-pressed="false">D</button></div>
+        <div class="fieldrow" style="margin-top:16px">
+          <div class="f"><label class="fl">Abre</label><input type="time" id="open" value="08:00"></div>
+          <div class="f"><label class="fl">Cierra</label><input type="time" id="close" value="21:00"></div>
+          <div class="f"><label class="fl">Respetar horario</label><button class="sw-toggle" id="respect" aria-pressed="true"></button></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="split"><div><h3>Grupos de programación</h3><p class="sub">Programa varios audios a la vez: especiales, temporadas, horas específicas.</p></div><button class="btn primary sm" id="newGroup">➕ Crear grupo</button></div>
+        <div id="groupForm" hidden></div>
+        <div id="groupList" style="margin-top:12px"></div>
+      </div>
+      <div class="edu"><div class="eyebrow">CÓMO FUNCIONA</div><p>Cada canción y cada anuncio tiene el botón <b>⏱ Programar</b>: fecha de inicio y fin, días, hora y —en anuncios— frecuencia (cada N canciones). Para programar muchos de golpe, crea un <b>grupo</b>. Fuera de su ventana, el audio no entra en la rotación.</p></div>
+    </div>
+
+    <div class="tabpanel" id="tab-anuncios" hidden>
+      <div class="card">
+        <h3>Tus anuncios</h3>
+        <p class="sub">Sube tu anuncio (MP3). Programa cada uno con ⏱: fechas, días, horas y frecuencia (cada N canciones).</p>
+        <label class="drop" for="adFile"><b>📢 Sube tu anuncio (MP3)</b></label>
+        <input id="adFile" type="file" accept="audio/*" multiple hidden>
+        <div class="bulkbar" id="bulkAd" hidden style="margin-top:12px"><button type="button" class="lnk" id="adSelAll">Seleccionar todos</button><span class="cnt" id="adCnt">0 seleccionados</span><span class="bspacer"></span><button class="btn primary sm" id="adSchedBtn" disabled>📅 Programar juntos</button></div>
+        <div class="bulkedit" id="adBulkEdit" hidden></div>
+        <div class="list" id="adlist"></div>
+        <details style="margin-top:12px"><summary class="note" style="cursor:pointer">…o escríbelo (voz demo)</summary>
+          <textarea id="adText" placeholder="Escribe aquí el texto de tu anuncio…" style="margin-top:8px"></textarea>
+          <select id="voice" style="margin-top:8px"></select>
+          <button class="btn ghost sm" id="genAd" style="margin-top:8px">Guardar</button>
+        </details>
+        <p class="note" style="margin-top:10px">En real: locutor AI de ElevenLabs o tu locutor humano. Aquí tu MP3 suena de verdad.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- AFILIADO -->
+  <section class="view" id="v-afiliado" hidden>
+    <div class="vhead"><h1>Programa de Afiliados</h1><p>Refiere negocios con tu link y gana comisión recurrente por cada cuenta activa.</p></div>
+    <div class="kpis" style="margin-bottom:14px">
+      <div class="kpi"><div class="l">Referidos activos</div><div class="v tnum">14</div></div>
+      <div class="kpi"><div class="l">Comisión / mes</div><div class="v tnum">$112<small>.00</small></div></div>
+      <div class="kpi"><div class="l">Ganado total</div><div class="v tnum">$843<small>.50</small></div></div>
+      <div class="kpi"><div class="l">Tu tasa</div><div class="v tnum">20%<small> rec.</small></div></div>
+    </div>
+    <div class="two">
+      <div class="card"><h3>Tus referidos</h3><p class="sub">Cada cliente activo paga tu comisión cada mes.</p><div style="overflow-x:auto"><table><thead><tr><th>Negocio</th><th>Desde</th><th>Estado</th><th style="text-align:right">$/mes</th></tr></thead><tbody id="affRows"></tbody></table></div></div>
+      <div class="card"><h3>Tu link de referido</h3><p class="sub">Quien se registre por aquí queda ligado a ti.</p><div class="refbox"><code id="affLink">bpms.sisanpr.com/r/CARLOS-PR</code><button class="btn primary sm" id="copyAff">Copiar</button></div><div class="split" style="align-items:flex-end;margin-top:16px"><div><div style="font-size:26px;font-weight:700;font-family:Barlow Semi Condensed">$112.00</div><div class="note">disponible · Stripe Connect</div></div><button class="btn primary sm">Solicitar pago</button></div></div>
+    </div>
+  </section>
+
+  <!-- REVENDEDOR -->
+  <section class="view" id="v-revendedor" hidden>
+    <div class="vhead"><h1>Revendedor / Agencia</h1><p>Compras al por mayor y revendes a tu precio, con tus clientes bajo tu cuenta y tu marca.</p></div>
+    <div class="kpis" style="margin-bottom:14px">
+      <div class="kpi"><div class="l">Tus clientes</div><div class="v tnum">31</div></div>
+      <div class="kpi"><div class="l">Ingreso / mes</div><div class="v tnum">$1,239<small>.69</small></div></div>
+      <div class="kpi"><div class="l">Costo mayorista</div><div class="v tnum">$775<small>.00</small></div></div>
+      <div class="kpi"><div class="l">Tu margen</div><div class="v tnum" style="color:var(--ok)">$464<small>.69</small></div></div>
+    </div>
+    <div class="two">
+      <div class="card"><h3>Tus clientes</h3><p class="sub">Los manejas tú; la relación es tuya.</p><div class="split" style="margin-bottom:12px"><span class="note">31 cuentas</span><button class="btn primary sm">+ Añadir cliente</button></div><div style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Plan</th><th>Estado</th><th style="text-align:right">Margen</th></tr></thead><tbody id="resRows"></tbody></table></div></div>
+      <div class="card"><h3>Economía por cliente</h3><p class="sub">Configurable.</p><div class="split"><span class="note">Costo mayorista</span><b class="tnum">$25.00</b></div><div class="split" style="margin-top:6px"><span class="note">Precio de venta</span><b class="tnum">$39.99</b></div><div class="split" style="margin-top:6px"><span class="note">Tu margen</span><b class="tnum" style="color:var(--ok)">$14.99</b></div><div class="margin-bar" style="margin-top:12px"><i style="width:62.5%;background:var(--line-2)"></i><i style="width:37.5%;background:var(--ok)"></i></div><div class="item" style="margin-top:14px"><span>🏷</span><span class="g"><b>White-label: Agencia Caribe Media</b><span>musica.caribemedia.com</span></span><span class="tag ok">Activo</span></div></div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var $=function(s,r){return (r||document).querySelector(s)};
+  var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+  function fmt(s){ s=Math.max(0,Math.floor(s||0)); return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2); }
+
+  // reloj
+  function clk(){ var d=new Date(); $('#clock').textContent=('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)+':'+('0'+d.getSeconds()).slice(-2); }
+  clk(); setInterval(clk,1000);
+
+  $('#roles').addEventListener('click',function(e){ var b=e.target.closest('button[data-role]'); if(!b)return; $$('#roles button').forEach(function(x){x.setAttribute('aria-selected',x===b?'true':'false')}); ['cliente','afiliado','revendedor'].forEach(function(r){$('#v-'+r).hidden=(r!==b.dataset.role)}); window.scrollTo(0,0); });
+  $('#subtabs').addEventListener('click',function(e){ var b=e.target.closest('button[data-tab]'); if(!b)return; $$('#subtabs button').forEach(function(x){x.setAttribute('aria-selected',x===b?'true':'false')}); ['musica','anuncios','prog'].forEach(function(t){$('#tab-'+t).hidden=(t!==b.dataset.tab)}); if(b.dataset.tab==='prog')renderProg(); });
+
+  /* ===== estado ===== */
+  var playing=false, source='mine', ambiente='variada';
+  var uploaded=[], ads=[];           // uploaded:{name,url,on}  ads:{type,name?,url?,text?,on}
+  var musicEl=new Audio(), adEl=new Audio(); try{musicEl.setAttribute('playsinline','');adEl.setAttribute('playsinline','');musicEl.preload='auto';}catch(e){}
+  function stopAllAudio(){ try{musicEl.pause();}catch(e){} try{adEl.pause();}catch(e){} try{if(window.speechSynthesis)speechSynthesis.cancel();}catch(e){} }
+  var queue=[], qi=-1;
+  var DEMO_SONG=15, DEMO_AD=7;
+  var cur={kind:'song', total:0, isAudio:false, el:null, acc:0, startAt:0}; // acc=elapsed acumulado (demo), startAt=marca de tiempo
+
+  var CATALOG={variada:[['Amanecer en la Isla','Marejada Trío'],['Café y Calle','Los del Barrio'],['Brisa de Diciembre','Conjunto Aurora'],['Domingo de Plaza','Grupo Sol'],['Paso Fino','Orquesta Mayagüez']],retail:[['Ritmo del Mercado','Son Caribe'],['Vitrina','Dúo Metropol'],['Avenida','Los Faroles'],['Movida Buena','Banda Litoral']],restaurante:[['Mesa para Dos','Trío Marejada'],['Sobremesa','Quinteto Luna'],['Tarde Lenta','Grupo Sereno'],['Vino y Mar','Conjunto Bahía']],pico:[['Hora Pico','Son Caribe'],['Corre que Corre','Banda Litoral'],['Caja Abierta','Los Faroles'],['Fin de Mes','Orquesta Mayagüez']]};
+  // sin anuncios de demostración: el cliente sube los suyos propios
+
+  /* ===== cama musical de demostración (generada en el navegador, sin derechos) ===== */
+  var actx=null, bedGain=null, bedOn=false, bedTimer=null;
+  var PROG={ variada:[[60,64,67,71],[57,60,64,67],[53,57,60,64],[55,59,62,65]],
+             retail:[[62,66,69,73],[57,61,64,68],[59,62,66,69],[55,59,62,66]],
+             restaurante:[[60,63,67,70],[56,60,63,67],[58,62,65,68],[53,57,60,64]],
+             pico:[[64,67,71,74],[60,64,67,71],[62,65,69,72],[57,61,64,67]] };
+  var CHORDDUR={ variada:2.4, retail:2.0, restaurante:2.8, pico:1.8 };
+  function mfreq(m){ return 440*Math.pow(2,(m-69)/12); }
+  function ctxGet(){ if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ actx=null; } } return actx; }
+  function playChord(ms,dur){ var c=ctxGet(); if(!c||!bedGain)return; var t=c.currentTime;
+    ms.forEach(function(m){ var o=c.createOscillator(),g=c.createGain(),f=c.createBiquadFilter();
+      o.type='triangle'; o.frequency.value=mfreq(m);
+      f.type='lowpass'; f.frequency.value=1500; f.Q.value=0.6;
+      g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.12,t+0.6); g.gain.setValueAtTime(0.12,t+dur-0.7); g.gain.linearRampToValueAtTime(0.0001,t+dur);
+      o.connect(f); f.connect(g); g.connect(bedGain); o.start(t); o.stop(t+dur+0.1); });
+    var bo=c.createOscillator(),bg=c.createGain(); bo.type='sine'; bo.frequency.value=mfreq(ms[0]-12);
+    bg.gain.setValueAtTime(0.0001,t); bg.gain.linearRampToValueAtTime(0.15,t+0.4); bg.gain.setValueAtTime(0.15,t+dur-0.5); bg.gain.linearRampToValueAtTime(0.0001,t+dur);
+    bo.connect(bg); bg.connect(bedGain); bo.start(t); bo.stop(t+dur+0.1);
+  }
+  function startBed(){ var c=ctxGet(); if(!c)return; if(c.state==='suspended')c.resume(); if(!bedGain){bedGain=c.createGain();bedGain.connect(c.destination);} var tgt=0.9*vol+0.0001; bedGain.gain.cancelScheduledValues(c.currentTime); bedGain.gain.setValueAtTime(Math.max(0.0001,bedGain.gain.value),c.currentTime); bedGain.gain.linearRampToValueAtTime(tgt,c.currentTime+0.4); if(bedOn)return; bedOn=true; var prog=PROG[ambiente]||PROG.variada, dur=CHORDDUR[ambiente]||2.4, i=0; playChord(prog[0],dur); bedTimer=setInterval(function(){ if(!bedOn){return;} i=(i+1)%prog.length; playChord(prog[i],dur); }, dur*1000); }
+  function stopBed(){ bedOn=false; if(bedTimer){clearInterval(bedTimer);bedTimer=null;} if(bedGain&&actx){ bedGain.gain.cancelScheduledValues(actx.currentTime); bedGain.gain.setValueAtTime(Math.max(0.0001,bedGain.gain.value),actx.currentTime); bedGain.gain.linearRampToValueAtTime(0.0001,actx.currentTime+0.25); } }
+
+  /* ===== programación por audio (estilo BPMS Pro) ===== */
+  var uid=0; function nid(){ return 'a'+(++uid); }
+  var groups=[];                          // {id,name,kind:'music'|'ad',members:[ids],sch}
+  var DAYK=['sun','mon','tue','wed','thu','fri','sat'];
+  var DAYORDER=['mon','tue','wed','thu','fri','sat','sun'];
+  var DAYL={mon:'L',tue:'M',wed:'X',thu:'J',fri:'V',sat:'S',sun:'D'};
+  function toMin(s){var p=(s||'0:0').split(':');return (+p[0])*60+(+p[1]);}
+  function newSch(){ return {start:'',end:'',from:'',to:'',days:{mon:1,tue:1,wed:1,thu:1,fri:1,sat:1,sun:1},every:1}; }
+  function groupFor(id,kind){ for(var i=0;i<groups.length;i++){ if(groups[i].kind===kind && groups[i].members.indexOf(id)>=0) return groups[i]; } return null; }
+  function effSch(item,kind){ var g=groupFor(item.id,kind); if(g && g.mode!=='individual') return g.sch; return item.sch||null; }
+  function schState(s){ if(!s) return true; var now=new Date();
+    if(s.start && now < new Date(s.start+'T00:00:00')) return 'pre';
+    if(s.end && now > new Date(s.end+'T23:59:59')) return 'post';
+    if(s.days && !s.days[DAYK[now.getDay()]]) return 'day';
+    if(s.from||s.to){ var hm=now.getHours()*60+now.getMinutes(); if(hm < (s.from?toMin(s.from):0) || hm >= (s.to?toMin(s.to):1440)) return 'time'; }
+    return true; }
+  function schLabel(st){ return st===true?'Activo ahora':st==='pre'?'Programado':st==='post'?'Vencido':st==='day'?'Hoy no toca':'Fuera de hora'; }
+  function activeNow(item,kind){ return schState(effSch(item,kind))===true; }
+  function schSummary(s){ if(!s) return 'Suena siempre'; var p=[];
+    if(s.start||s.end) p.push('📅 '+(s.start||'…')+' → '+(s.end||'…'));
+    var dd=DAYORDER.filter(function(k){return s.days&&s.days[k];}); if(dd.length<7) p.push(dd.map(function(k){return DAYL[k];}).join(''));
+    if(s.from||s.to) p.push('🕒 '+(s.from||'00:00')+'–'+(s.to||'24:00'));
+    if(s.every&&s.every>1) p.push('cada '+s.every+' cxns');
+    return p.length?p.join(' · '):'Suena siempre'; }
+  function badge(item,kind){ var s=effSch(item,kind),st=schState(s),cls=st===true?'ok':(st==='pre'?'warn':'off'); return '<span class="chip '+cls+'">'+schLabel(st)+'</span> <span class="schsum">'+schSummary(s)+'</span>'; }
+  function attachSched(box,obj,isAd,onChange){ if(!obj.sch)obj.sch=newSch(); var s=obj.sch;
+    box.innerHTML='<div class="sched"><div class="sgrid">'+
+      '<div><label class="fl">Fecha inicio</label><input type="date" data-k="start" value="'+s.start+'"></div>'+
+      '<div><label class="fl">Fecha fin</label><input type="date" data-k="end" value="'+s.end+'"></div>'+
+      '<div><label class="fl">Hora desde</label><input type="time" data-k="from" value="'+s.from+'"></div>'+
+      '<div><label class="fl">Hora hasta</label><input type="time" data-k="to" value="'+s.to+'"></div></div>'+
+      '<label class="fl" style="margin-top:8px">Días que toca</label><div class="dayp">'+DAYORDER.map(function(k){return '<button type="button" data-day="'+k+'" aria-pressed="'+(s.days[k]?'true':'false')+'">'+DAYL[k]+'</button>';}).join('')+'</div>'+
+      (isAd?'<div class="freqrow"><label class="fl" style="margin:0">Frecuencia:</label> cada <input type="number" min="1" max="30" data-k="every" value="'+(s.every||1)+'"> canciones</div>':'')+
+      '<button type="button" class="btn ghost sm sclear" style="margin-top:10px">Quitar programación (suena siempre)</button></div>';
+    $$('input[data-k]',box).forEach(function(inp){ inp.addEventListener('change',function(){ var k=inp.dataset.k; obj.sch[k]=(k==='every'?Math.max(1,parseInt(inp.value||'1',10)):inp.value); onChange&&onChange(); }); });
+    $$('[data-day]',box).forEach(function(b){ b.addEventListener('click',function(){ var on=b.getAttribute('aria-pressed')==='true'; b.setAttribute('aria-pressed',!on); obj.sch.days[b.dataset.day]=on?0:1; onChange&&onChange(); }); });
+    $('.sclear',box).addEventListener('click',function(){ obj.sch=null; box.hidden=true; onChange&&onChange(); }); }
+
+  /* ===== selección múltiple + programar juntas (en la misma lista) ===== */
+  var sel={music:{},ad:{}};
+  function selIds(kind){ return Object.keys(sel[kind]).filter(function(k){return sel[kind][k];}); }
+  function refreshBulk(kind){ var isAd=kind==='ad'; var items=isAd?ads:uploaded; var bar=$(isAd?'#bulkAd':'#bulkMus'); if(bar)bar.hidden=items.length<1; var n=selIds(kind).length; var c=$(isAd?'#adCnt':'#musCnt'); if(c)c.textContent=n+(isAd?(' seleccionado'+(n===1?'':'s')):(' seleccionada'+(n===1?'':'s'))); var btn=$(isAd?'#adSchedBtn':'#musSchedBtn'); if(btn)btn.disabled=n<1; }
+  function wireBulk(kind){ var isAd=kind==='ad'; var selAll=$(isAd?'#adSelAll':'#musSelAll'); var btn=$(isAd?'#adSchedBtn':'#musSchedBtn'); var edBox=$(isAd?'#adBulkEdit':'#musBulkEdit'); var reRender=isAd?function(){renderAds();}:function(){renderUploads();};
+    if(selAll) selAll.onclick=function(){ var all=isAd?ads:uploaded; var anyOff=all.some(function(it){return !sel[kind][it.id];}); all.forEach(function(it){ sel[kind][it.id]=anyOff; }); reRender(); };
+    if(btn) btn.onclick=function(){ if(edBox && !edBox.hidden){ edBox.hidden=true; return; } var tmp={sch:newSch()}; edBox.innerHTML='<label class="fl" style="margin-bottom:6px">Fecha / días / hora'+(isAd?' / frecuencia':'')+' para los seleccionados</label>'; var holder=document.createElement('div'); edBox.appendChild(holder); attachSched(holder,tmp,isAd,null); var apply=document.createElement('button'); apply.type='button'; apply.className='btn primary sm'; apply.style.marginTop='10px'; apply.textContent='✓ Aplicar a '+selIds(kind).length+' seleccionado(s)'; apply.onclick=function(){ var items=isAd?ads:uploaded; items.forEach(function(it){ if(sel[kind][it.id]) it.sch = tmp.sch?JSON.parse(JSON.stringify(tmp.sch)):null; }); edBox.hidden=true; sel[kind]={}; reRender(); buildQueue(); }; edBox.appendChild(apply); edBox.hidden=false; }; }
+
+  function onTracks(){ return uploaded.filter(function(u){return u.on!==false;}); }
+  function songsPool(){ if(source==='mine'){ return onTracks().filter(function(u){return activeNow(u,'music');}).map(function(u){return {kind:'song',name:(u.name||'').replace(/\.[^.]+$/,''),by:'Tu música',url:u.url,__item:u};}); } return CATALOG[ambiente].map(function(s){return {kind:'song',name:s[0],by:s[1]};}); }
+  function adName(a){ return a.type==='audio'?a.name:(a.type==='text'?a.text.slice(0,30):(a.name||'Anuncio')); }
+  function adsPool(){ return ads.filter(function(a){return a.on!==false && activeNow(a,'ad');}); }
+  function buildQueue(){ var songs=songsPool(), ap=adsPool(), q=[], ai=0;
+    songs.forEach(function(s,idx){ q.push(s); var k=idx+1; var due=ap.filter(function(a){ var es=effSch(a,'ad'); var e=(es&&es.every)||1; return k%e===0; }); if(due.length){ var a=due[ai%due.length]; ai++; q.push({kind:'ad',ad:a,name:adName(a)}); } });
+    queue=q; if(qi>=queue.length)qi=0; renderRows(); }
+
+  function renderRows(){
+    var w=$('#rows'); w.innerHTML='';
+    if(!queue.length){ w.innerHTML='<div class="empty">Sube tu música (Música ▸ Sube tu música) para empezar. Luego se alterna: canción → anuncio → canción.</div>'; return; }
+    var start=Math.max(0,qi);
+    for(var i=start;i<Math.min(queue.length,start+8);i++){ (function(i){
+      var it=queue[i], isAd=it.kind==='ad', isCur=i===qi;
+      var dur = isAd ? (it.ad&&it.ad.type==='audio'?'0:20':fmt(DEMO_AD)) : (it.url?'—':fmt(DEMO_SONG));
+      var d=document.createElement('div'); d.className='row'+(isAd?' ad':'')+(isCur?' cur':'');
+      d.innerHTML='<span class="ic">'+(isAd?'📢':'🎵')+'</span><span class="g"><b></b><span>'+(isAd?'Anuncio':'Canción')+'</span></span>'+(isCur?'<span class="nowtag" id="rowtag">AL AIRE</span>':'<span class="dur mono">'+dur+'</span>');
+      d.querySelector('b').textContent=it.name||(isAd?'Anuncio':'Canción');
+      w.appendChild(d);
+    })(i); }
+  }
+
+  function elapsed(){ if(cur.isAudio&&cur.el){ return cur.el.currentTime||0; } return cur.acc + (playing?(Date.now()-cur.startAt)/1000:0); }
+  function total(){ if(cur.isAudio&&cur.el){ return cur.el.duration||0; } return cur.total; }
+
+  function showDeck(it){
+    var isAd=it.kind==='ad';
+    $('#deck').classList.toggle('adair',isAd);
+    $('#kind').innerHTML='<span class="tally"></span> '+(isAd?'ANUNCIO':'CANCIÓN');
+    $('#cover').textContent=isAd?'📢':'🎵';
+    $('#title').textContent=it.name||(isAd?'Anuncio':'Canción');
+    $('#sub').textContent = isAd
+      ? (it.ad&&it.ad.type==='audio' ? 'Tu anuncio' : 'Locutor AI · voz')
+      : (it.url ? (it.by||'Tu música') : (it.by? it.by+' · Librería (vista previa)' : 'Librería (vista previa)'));
+    $('#nosnd').hidden = isAd ? true : !!it.url;
+  }
+
+  function playItem(){
+    if(!queue.length)buildQueue();
+    if(qi<0||qi>=queue.length)qi=0;
+    var it=queue[qi]; showDeck(it); renderRows();
+    cur.kind=it.kind; cur.isAudio=false; cur.el=null; cur.acc=0; cur.startAt=Date.now();
+    stopAllAudio();
+    if(it.kind==='song'){
+      if(it.url){ stopBed(); cur.isAudio=true; cur.el=musicEl; musicEl.src=it.url; musicEl.volume=vol; musicEl.onended=advance; musicEl.onerror=advance; musicEl.play().catch(function(){}); }
+      else { cur.total=DEMO_SONG; }
+    } else {
+      stopBed();
+      var a=it.ad;
+      if(a.type==='audio'){ cur.isAudio=true; cur.el=adEl; adEl.src=a.url; adEl.volume=Math.max(.8,vol); adEl.onended=advance; adEl.onerror=advance; adEl.play().catch(advance); }
+      else { cur.total=DEMO_AD; if(a.type==='text'&&window.speechSynthesis){ try{var u=new SpeechSynthesisUtterance(a.text); var vi=parseInt(($('#voice')||{}).value,10); if(voices[vi])u.voice=voices[vi]; u.lang='es-US'; speechSynthesis.cancel(); speechSynthesis.speak(u);}catch(e){} } }
+    }
+  }
+  var lastAdv=0;
+  function advance(){ if(!playing)return; var n=Date.now(); if(n-lastAdv<350)return; lastAdv=n; qi++; if(qi>=queue.length){ buildQueue(); qi=0; } playItem(); }
+
+  var raf=null;
+  function loop(){ if(!playing){raf=null;return;} var e=elapsed(), t=total()||(cur.kind==='ad'?DEMO_AD:DEMO_SONG);
+    $('#pfill').style.width=Math.min(100,(t?e/t:0)*100)+'%';
+    $('#tcur').textContent=fmt(e); $('#ttot').textContent=t?fmt(t):'0:00';
+    var rem=Math.max(0,t-e); $('#cue').innerHTML='Próximo en <b>'+fmt(rem)+'</b>';
+    var tg=$('#rowtag'); if(tg)tg.textContent='AL AIRE · -'+fmt(rem);
+    if(!cur.isAudio && e>=t){ advance(); }
+    raf=requestAnimationFrame(loop);
+  }
+
+  function startPlay(){ if(!queue.length)buildQueue(); if(!queue.length){ renderRows(); $('#deck').classList.remove('playing'); $('#title').textContent='Sube tu música para empezar'; $('#sub').textContent='Música ▸ Sube tu música (MP3)'; $('#nosnd').hidden=false; return; } playing=true; $('#deck').classList.add('playing'); $('#play').textContent='⏸'; $('#onair').classList.add('on'); $('#onair').innerHTML='<span class="lamp"></span> AL AIRE'; if(qi<0)qi=0; playItem(); if(!raf)raf=requestAnimationFrame(loop); }
+  function pausePlay(){ cur.acc=elapsed(); playing=false; $('#deck').classList.remove('playing'); $('#play').textContent='▶'; $('#onair').classList.remove('on'); $('#onair').innerHTML='<span class="lamp"></span> EN ESPERA'; stopBed(); stopAllAudio(); if(raf){cancelAnimationFrame(raf);raf=null;} }
+  $('#play').addEventListener('click',function(){ playing?pausePlay():startPlay(); });
+  $('#next').addEventListener('click',function(){ if(!playing){startPlay();return;} advance(); });
+  $('#prev').addEventListener('click',function(){ qi=Math.max(0,qi-1); if(playing)playItem(); else renderRows(); });
+  var vol=0.8;
+  $('#vol').addEventListener('input',function(e){ vol=e.target.value/100; musicEl.volume=vol; adEl.volume=Math.max(.8,vol); if(bedOn&&bedGain&&actx){ bedGain.gain.setValueAtTime(0.9*vol+0.0001, actx.currentTime); } });
+
+  function setSource(s){ source=s; $$('#srcSeg button').forEach(function(x){x.setAttribute('aria-selected',x.dataset.src===s?'true':'false')}); $('#src-lib').hidden=s!=='lib'; $('#src-mine').hidden=s!=='mine'; qi=0; buildQueue(); if(playing)playItem(); }
+  $('#srcSeg').addEventListener('click',function(e){ var b=e.target.closest('button[data-src]'); if(b)setSource(b.dataset.src); });
+  $('#amb').addEventListener('click',function(e){ var b=e.target.closest('button[data-amb]'); if(!b)return; $$('#amb button').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')}); ambiente=b.dataset.amb; qi=0; buildQueue(); });
+
+  $('#file').addEventListener('change',function(e){ Array.prototype.forEach.call(e.target.files,function(f){ if(/audio/.test(f.type))uploaded.push({id:nid(),name:f.name,url:URL.createObjectURL(f),on:true}); }); renderUploads(); if(uploaded.length)setSource('mine'); });
+  function renderUploads(){ var w=$('#uplist'); w.innerHTML=''; if(!uploaded.length){ w.innerHTML='<div class="empty">Sube tus MP3 👆 y entran en la rotación.</div>'; refreshBulk('music'); return; }
+    uploaded.forEach(function(u){ var wrap=document.createElement('div'); wrap.className='item2';
+      var head=document.createElement('div'); head.className='item';
+      head.innerHTML='<input type="checkbox" class="msel" '+(sel.music[u.id]?'checked':'')+'><span>🎵</span><span class="g"><b></b><span class="st"></span></span><button class="iconbtn prog" title="Programar">⏱</button><button class="sw-toggle" aria-pressed="'+(u.on!==false)+'"></button><button class="iconbtn rm">✕</button>';
+      head.querySelector('b').textContent=u.name; var stEl=head.querySelector('.st'); stEl.innerHTML=badge(u,'music');
+      head.querySelector('.msel').onchange=function(){ sel.music[u.id]=this.checked; refreshBulk('music'); };
+      var ed=document.createElement('div'); ed.className='editwrap'; ed.hidden=true;
+      head.querySelector('.prog').onclick=function(){ if(ed.hidden){ attachSched(ed,u,false,function(){ stEl.innerHTML=badge(u,'music'); buildQueue(); }); ed.hidden=false; } else { ed.hidden=true; } };
+      head.querySelector('.sw-toggle').onclick=function(){u.on=!(u.on!==false); renderUploads(); buildQueue();};
+      head.querySelector('.rm').onclick=function(){ delete sel.music[u.id]; uploaded=uploaded.filter(function(x){return x!==u;}); renderUploads(); buildQueue(); };
+      wrap.appendChild(head); wrap.appendChild(ed); w.appendChild(wrap); }); refreshBulk('music'); }
+
+  var voices=[];
+  function loadVoices(){ voices=(window.speechSynthesis?speechSynthesis.getVoices():[]).filter(function(v){return /es/i.test(v.lang);}); var sel=$('#voice'); if(!sel)return; sel.innerHTML=''; if(!voices.length){sel.innerHTML='<option>Voz del sistema</option>';return;} voices.forEach(function(v,i){var o=document.createElement('option');o.value=i;o.textContent=v.name;sel.appendChild(o);}); }
+  if(window.speechSynthesis){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
+  function previewAd(a){ if(playing)pausePlay(); stopAllAudio(); if(a.type==='audio'){ adEl.src=a.url; adEl.volume=Math.max(.8,vol); adEl.play().catch(function(){}); } else if(a.type==='text'&&window.speechSynthesis){ try{var u=new SpeechSynthesisUtterance(a.text); u.lang='es-US'; speechSynthesis.cancel(); speechSynthesis.speak(u);}catch(e){} } }
+  function renderAds(){ var w=$('#adlist'); w.innerHTML=''; if(!ads.length){ w.innerHTML='<div class="empty">Aún no has subido anuncios. Sube tu MP3 👆 y entrará entre las canciones.</div>'; return; }
+    ads.forEach(function(a){ var wrap=document.createElement('div'); wrap.className='item2';
+      var head=document.createElement('div'); head.className='item';
+      head.innerHTML='<input type="checkbox" class="msel" '+(sel.ad[a.id]?'checked':'')+'><span>'+(a.type==='audio'?'🔊':'📝')+'</span><span class="g"><b></b><span class="st"></span></span><button class="iconbtn play" title="Oír">▶</button><button class="iconbtn prog" title="Programar">⏱</button><button class="sw-toggle" aria-pressed="'+(a.on!==false)+'"></button><button class="iconbtn rm">✕</button>';
+      head.querySelector('b').textContent=adName(a); var stEl=head.querySelector('.st'); stEl.innerHTML=badge(a,'ad');
+      head.querySelector('.msel').onchange=function(){ sel.ad[a.id]=this.checked; refreshBulk('ad'); };
+      var ed=document.createElement('div'); ed.className='editwrap'; ed.hidden=true;
+      head.querySelector('.play').onclick=function(){previewAd(a);};
+      head.querySelector('.prog').onclick=function(){ if(ed.hidden){ attachSched(ed,a,true,function(){ stEl.innerHTML=badge(a,'ad'); buildQueue(); }); ed.hidden=false; } else { ed.hidden=true; } };
+      head.querySelector('.sw-toggle').onclick=function(){a.on=!(a.on!==false); renderAds(); buildQueue();};
+      head.querySelector('.rm').onclick=function(){ delete sel.ad[a.id]; ads=ads.filter(function(x){return x!==a;}); renderAds(); buildQueue(); };
+      wrap.appendChild(head); wrap.appendChild(ed); w.appendChild(wrap); }); refreshBulk('ad'); }
+  $('#adFile').addEventListener('change',function(e){ Array.prototype.forEach.call(e.target.files,function(f){ if(/audio/.test(f.type))ads.push({id:nid(),type:'audio',name:f.name,url:URL.createObjectURL(f),on:true}); }); renderAds(); buildQueue(); });
+  $('#genAd').addEventListener('click',function(){ var t=($('#adText')||{}).value.trim(); if(!t)return; ads.push({id:nid(),type:'text',text:t,on:true}); renderAds(); buildQueue(); $('#adText').value=''; });
+
+  /* horario */
+  var sched={days:{mon:1,tue:1,wed:1,thu:1,fri:1,sat:1,sun:0},open:'08:00',close:'21:00',respect:true};
+  function toMin(s){var p=s.split(':');return (+p[0])*60+(+p[1]);}
+  function within(){ var now=new Date(); var dk=['sun','mon','tue','wed','thu','fri','sat'][now.getDay()]; if(!sched.days[dk])return false; var hm=now.getHours()*60+now.getMinutes(); return hm>=toMin(sched.open)&&hm<toMin(sched.close); }
+  function renderSch(){ var el=$('#schStatus'); if(!el)return; if(!sched.respect){ el.innerHTML='<span class="pill ok"><span class="pulse"></span> Suena siempre</span><span class="note">Horario desactivado.</span>'; } else if(within()){ el.innerHTML='<span class="pill ok"><span class="pulse"></span> Dentro de horario</span><span class="note">Suena normal.</span>'; } else { el.innerHTML='<span class="pill warn">● Fuera de horario</span><span class="note">Cerrado — estaría en silencio.</span>'; } }
+  $('#days').addEventListener('click',function(e){ var b=e.target.closest('button[data-d]'); if(!b)return; var on=b.getAttribute('aria-pressed')==='true'; b.setAttribute('aria-pressed',!on); sched.days[b.dataset.d]=on?0:1; renderSch(); });
+  $('#open').addEventListener('change',function(e){sched.open=e.target.value;renderSch();});
+  $('#close').addEventListener('change',function(e){sched.close=e.target.value;renderSch();});
+  $('#respect').addEventListener('click',function(){sched.respect=!sched.respect;this.setAttribute('aria-pressed',sched.respect);renderSch();});
+
+  /* ===== grupos de programación ===== */
+  function groupItems(kind){ return kind==='ad'?ads:uploaded; }
+  function renderGroupForm(g){ var box=$('#groupForm'); if(!box)return; if(!g){ box.hidden=true; box.innerHTML=''; return; } box.hidden=false; if(!g.mode)g.mode='shared';
+    box.innerHTML='<div class="gform"><label class="fl">Nombre del grupo</label><input id="gName" value="'+(g.name||'')+'" placeholder="Ej: Especiales de Navidad">'+
+      '<div class="seg" id="gKind" style="margin-top:10px"><button type="button" data-k="music" aria-selected="'+(g.kind==='music')+'">Música</button><button type="button" data-k="ad" aria-selected="'+(g.kind==='ad')+'">Anuncios</button></div>'+
+      '<label class="fl" style="margin-top:10px">Miembros del grupo</label><div class="memlist" id="gMembers"></div>'+
+      '<label class="fl" style="margin-top:12px">¿Cómo programar el grupo?</label>'+
+      '<div class="seg" id="gMode"><button type="button" data-m="shared" aria-selected="'+(g.mode!=='individual')+'">Todos a la vez</button><button type="button" data-m="individual" aria-selected="'+(g.mode==='individual')+'">Individual por audio</button></div>'+
+      '<div id="gModeNote" class="note" style="margin-top:8px"></div>'+
+      '<label class="fl" style="margin-top:10px" id="gSchLbl">Programación</label><div id="gSched"></div>'+
+      '<button type="button" class="btn ghost sm" id="gApplyAll" style="margin-top:8px;display:none">📋 Poner esta fecha a todos de una</button>'+
+      '<div class="split" style="margin-top:12px"><button class="btn ghost sm" id="gCancel">Cancelar</button><button class="btn primary sm" id="gSave">Guardar grupo</button></div></div>';
+    function drawMembers(){ var ml=$('#gMembers'); ml.innerHTML=''; var items=groupItems(g.kind); if(!items.length){ ml.innerHTML='<div class="note">Sube '+(g.kind==='ad'?'anuncios':'música')+' primero para añadirlos.</div>'; return; } items.forEach(function(it){ var r=document.createElement('label'); r.className='memrow'; r.innerHTML='<input type="checkbox" '+(g.members.indexOf(it.id)>=0?'checked':'')+'> <span></span>'; r.querySelector('span').textContent=g.kind==='ad'?adName(it):it.name; r.querySelector('input').onchange=function(){ if(this.checked){ if(g.members.indexOf(it.id)<0)g.members.push(it.id); } else { g.members=g.members.filter(function(x){return x!==it.id;}); } }; ml.appendChild(r); }); }
+    function drawMode(){ var ind=g.mode==='individual'; $('#gModeNote').textContent= ind? 'Cada audio usa su propia fecha (botón ⏱ en su lista). Abajo puedes fijar una plantilla y copiarla a todos de una, y luego ajustar cada uno por separado.' : 'Una sola programación que aplica a TODOS los audios del grupo a la vez.'; $('#gSchLbl').textContent= ind?'Plantilla (opcional) para copiar a todos':'Programación del grupo (aplica a todos)'; $('#gApplyAll').style.display= ind?'inline-flex':'none'; $$('#gMode button').forEach(function(x){x.setAttribute('aria-selected', (x.dataset.m==='individual')===ind);}); }
+    drawMembers(); attachSched($('#gSched'),g,g.kind==='ad',null); drawMode();
+    $$('#gKind button').forEach(function(b){ b.onclick=function(){ g.kind=b.dataset.k; g.members=[]; $$('#gKind button').forEach(function(x){x.setAttribute('aria-selected',x===b);}); drawMembers(); attachSched($('#gSched'),g,g.kind==='ad',null); }; });
+    $$('#gMode button').forEach(function(b){ b.onclick=function(){ g.mode=b.dataset.m; drawMode(); }; });
+    $('#gApplyAll').onclick=function(){ if(!g.sch)g.sch=newSch(); var ids=g.members.slice(); groupItems(g.kind).forEach(function(it){ if(ids.indexOf(it.id)>=0) it.sch=JSON.parse(JSON.stringify(g.sch)); }); var o=$('#gApplyAll').textContent; $('#gApplyAll').textContent='✓ Aplicado a '+ids.length+' audio(s)'; setTimeout(function(){$('#gApplyAll').textContent=o;},1500); renderUploads(); renderAds(); buildQueue(); };
+    $('#gCancel').onclick=function(){ renderGroupForm(null); };
+    $('#gSave').onclick=function(){ g.name=($('#gName').value||'').trim()||'Grupo'; if(groups.indexOf(g)<0)groups.push(g); renderGroupForm(null); renderGroups(); renderUploads(); renderAds(); buildQueue(); };
+  }
+  function renderGroups(){ var w=$('#groupList'); if(!w)return; w.innerHTML=''; if(!groups.length){ w.innerHTML='<div class="empty">No hay grupos todavía. Crea uno para programar varios audios a la vez.</div>'; return; }
+    groups.forEach(function(g){ var st=schState(g.sch),cls=st===true?'ok':(st==='pre'?'warn':'off'); var d=document.createElement('div'); d.className='grp'; d.innerHTML='<span>'+(g.kind==='ad'?'📢':'🎵')+'</span><span class="g"><b></b><span class="schsum"></span></span><span class="chip '+cls+'">'+schLabel(st)+'</span><button class="iconbtn ge" title="Editar">✎</button><button class="iconbtn gd" title="Borrar">✕</button>'; d.querySelector('b').textContent=g.name; d.querySelector('.schsum').textContent=g.members.length+' audio(s) · '+(g.mode==='individual'?'individual':'todos a la vez')+' · '+schSummary(g.sch); d.querySelector('.ge').onclick=function(){ renderGroupForm(g); }; d.querySelector('.gd').onclick=function(){ groups=groups.filter(function(x){return x!==g;}); renderGroups(); renderUploads(); renderAds(); buildQueue(); }; w.appendChild(d); });
+  }
+  if($('#newGroup')) $('#newGroup').onclick=function(){ renderGroupForm({id:nid(),name:'',kind:'music',members:[],mode:'shared',sch:newSch()}); };
+  function renderProg(){ renderSch(); renderGroups(); }
+
+  /* tablas */
+  [['Panadería La Flor','Ago 2026','ok',8],['Farmacia Delgado','Sep 2026','ok',8],['Boutique Marisol','Sep 2026','ok',8],['Ferretería El Clavo','Oct 2026','ok',8],['Café Tres Palmas','Oct 2026','ok',8],['Barbería Nítido','Oct 2026','off',0],['Salón Glamour','Nov 2026','ok',8],['Mini Market 24','Nov 2026','ok',8]].forEach(function(r){ var tr=document.createElement('tr'); tr.innerHTML='<td>'+r[0]+'</td><td class="note">'+r[1]+'</td><td><span class="tag '+(r[2]==='ok'?'ok">Activo':'off">Pausado')+'</span></td><td style="text-align:right" class="tnum">$'+r[3].toFixed(2)+'</td>'; $('#affRows').appendChild(tr); });
+  [['Supermercado Ejemplo','$39.99','ok',14.99],['Restaurante El Yunque','$39.99','ok',14.99],['Gimnasio Fuerte','$34.99','ok',9.99],['Spa Serenidad','$39.99','ok',14.99],['Tienda Surf PR','$39.99','off',0],['Panadería Borinquen','$44.99','ok',19.99]].forEach(function(r){ var tr=document.createElement('tr'); tr.innerHTML='<td>'+r[0]+'</td><td class="tnum">'+r[1]+'</td><td><span class="tag '+(r[2]==='ok'?'ok">Activo':'off">Pausado')+'</span></td><td style="text-align:right;color:'+(r[3]?'var(--ok)':'var(--ink-3)')+'" class="tnum">$'+r[3].toFixed(2)+'</td>'; $('#resRows').appendChild(tr); });
+  $('#copyAff').addEventListener('click',function(){ try{navigator.clipboard.writeText($('#affLink').textContent).then(function(){var o=$('#copyAff').textContent;$('#copyAff').textContent='✓';setTimeout(function(){$('#copyAff').textContent=o;},1200);}).catch(function(){});}catch(e){} });
+
+  /* ===== CONTENIDO PRECARGADO (demostración para socios) ===== */
+  (function(){
+    var SONGS=[
+      ['s01','Liar — Camila Cabello'],['s02','My Oh My — Camila Cabello'],['s03','Never Be the Same — Camila Cabello'],
+      ['s04','Vida de Rico — Camilo'],['s05','Caminando por la Vida — Melendi'],
+      ['s06','Colgando en tus Manos — Carlos Baute & Marta Sánchez'],['s07','Ando Buscando — Carlos Baute & Piso 21'],
+      ['s08','Regrésame mi Corazón — Carlos Rivera'],['s09','Alguien me Espera en Madrid — Carlos Rivera & Carin León'],
+      ['s10','Cuando nos Volvamos a Encontrar — Carlos Vives & Marc Anthony'],['s11','Cumbiana — Carlos Vives'],
+      ['s12','No te Vayas — Carlos Vives'],['s13','Rapsodia en La Mayor — Carlos Vives & Rodrigo Tenjo'],
+      ['s14','La Bicicleta — Carlos Vives & Shakira'],['s15','Carlos Vives & Sebastián Yatra']
+    ];
+    SONGS.forEach(function(s){ uploaded.push({id:nid(),name:s[1],url:'audio/'+s[0]+'.mp3',on:true}); });
+    function daysAll(){ return {mon:1,tue:1,wed:1,thu:1,fri:1,sat:1,sun:1}; }
+    // una cancion programada para diciembre (muestra el estado "Programado")
+    uploaded[10].sch={start:'2026-12-01',end:'2026-12-31',from:'',to:'',days:daysAll(),every:1};
+    function adSch(ev){ return {start:'',end:'',from:'',to:'',days:daysAll(),every:ev}; }
+    var ADS=[
+      ['a1','Coca-Cola · Powerade · Smartwater',adSch(1)],
+      ['a2','Carmela · Arroz El Mago',adSch(1)],
+      ['a3','Coca-Cola · Medalla',adSch(1)],
+      ['a4','Sprite · Medalla',null]
+    ];
+    ADS.forEach(function(a){ var o={id:nid(),type:'audio',name:a[1],url:'audio/'+a[0]+'.mp3',on:true}; if(a[2])o.sch=a[2]; ads.push(o); });
+    // grupo de ejemplo: anuncio de temporada programado para Navidad (todos a la vez)
+    groups.push({id:nid(),name:'Especiales de Navidad',kind:'ad',members:[ads[3].id],mode:'shared',sch:{start:'2026-12-01',end:'2026-12-24',from:'',to:'',days:daysAll(),every:2}});
+  })();
+  wireBulk('music'); wireBulk('ad'); renderUploads(); renderAds(); buildQueue(); renderSch(); renderGroups();
+  // seguridad: pausar/parar el audio si el panel se oculta o se cierra (evita que siga sonando)
+  try{
+    document.addEventListener('visibilitychange', function(){ if(document.hidden && playing) pausePlay(); });
+    window.addEventListener('pagehide', function(){ try{ playing=false; stopAllAudio(); }catch(e){} });
+    window.addEventListener('blur', function(){ /* no-op: no cortar por perder foco, solo al ocultarse */ });
+  }catch(e){}
+})();
+</script>
+</body>
+</html>
