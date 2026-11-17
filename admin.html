@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BPMS Online — Panel de créditos</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel2:#1c2430; --line:#2a3340;
+    --ink:#e8eef6; --mut:#8a97a8; --acc:#ff7a2f; --ok:#2fbf71; --warn:#e5b23c; --bad:#e5544b;
+    --r:12px; --fs:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:var(--fs)/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .wrap{max-width:1040px;margin:0 auto;padding:24px 16px 64px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  header h1{font-size:18px;margin:0;letter-spacing:.3px}
+  header .tag{font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:2px 10px}
+  .sub{color:var(--mut);margin:0 0 20px;font-size:13px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:16px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);margin:0 0 12px}
+  label{display:block;font-size:12px;color:var(--mut);margin:0 0 4px}
+  input{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--ink);
+    padding:9px 11px;font-size:14px;outline:none}
+  input:focus{border-color:var(--acc)}
+  .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .row.tight{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}
+  button{background:var(--acc);color:#0a0d12;border:0;border-radius:8px;padding:9px 16px;font-weight:600;
+    font-size:14px;cursor:pointer}
+  button:hover{filter:brightness(1.08)}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:500}
+  button.sm{padding:5px 10px;font-size:12px}
+  .mt{margin-top:12px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px}
+  .pill.ok{background:rgba(47,191,113,.15);color:var(--ok)}
+  .pill.low{background:rgba(229,178,60,.15);color:var(--warn)}
+  .pill.zero{background:rgba(229,84,75,.15);color:var(--bad)}
+  .tok{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--mut)}
+  .msg{font-size:13px;padding:8px 12px;border-radius:8px;margin-top:10px;display:none}
+  .msg.show{display:block}
+  .msg.ok{background:rgba(47,191,113,.12);color:var(--ok)}
+  .msg.err{background:rgba(229,84,75,.12);color:var(--bad)}
+  .hidden{display:none !important}
+  .muted{color:var(--mut)}
+  .foot{color:var(--mut);font-size:12px;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>BPMS Online</h1><span class="tag">Panel de créditos</span>
+  </header>
+  <p class="sub">Administra los clientes, sus anuncios incluidos y las recargas de créditos. 1 crédito = 1 carácter de texto.</p>
+
+  <!-- Login -->
+  <div class="card" id="loginCard">
+    <h2>Acceso de administrador</h2>
+    <label>Token de administrador</label>
+    <input id="adminTok" type="password" placeholder="adm_...">
+    <div class="mt"><button id="btnLogin">Entrar</button>
+      <label style="display:inline-block;margin-left:10px"><input type="checkbox" id="remember" style="width:auto" checked> recordar en este equipo</label>
+    </div>
+    <div class="msg err" id="loginMsg"></div>
+  </div>
+
+  <!-- App -->
+  <div id="app" class="hidden">
+    <!-- Clientes -->
+    <div class="card">
+      <h2>Clientes</h2>
+      <div id="tableWrap" class="muted">Cargando…</div>
+      <div class="foot">Referencia: anuncio de 30s ≈ 450–600 créditos. Con Flash, tu costo real ≈ la mitad.</div>
+    </div>
+
+    <!-- Crear / editar -->
+    <div class="card">
+      <h2>Crear o actualizar cliente</h2>
+      <div class="row">
+        <div><label>ID (sin espacios)</label><input id="cId" placeholder="cafe-luna"></div>
+        <div><label>Nombre</label><input id="cName" placeholder="Café Luna"></div>
+      </div>
+      <div class="row tight mt">
+        <div><label>Incluidos/mes (créditos)</label><input id="cIncl" type="number" value="12000"></div>
+        <div><label>Saldo extra inicial</label><input id="cExtra" type="number" value="0"></div>
+        <div><label>Token (opcional)</label><input id="cTok" placeholder="auto"></div>
+      </div>
+      <div class="mt"><button id="btnSave">Guardar cliente</button></div>
+      <div class="msg" id="saveMsg"></div>
+    </div>
+
+    <!-- Recargar -->
+    <div class="card">
+      <h2>Recargar créditos (extra)</h2>
+      <div class="row">
+        <div><label>ID del cliente</label><input id="rId" placeholder="cafe-luna"></div>
+        <div><label>Créditos a añadir</label><input id="rAdd" type="number" value="12000"></div>
+      </div>
+      <div class="mt"><button id="btnCredit">Añadir créditos</button>
+        <button class="ghost" id="btnReload" style="margin-left:8px">Refrescar lista</button></div>
+      <div class="msg" id="credMsg"></div>
+    </div>
+
+    <p class="foot">Sesión guardada solo en este navegador. <a href="#" id="logout" style="color:var(--acc)">Cerrar sesión</a></p>
+  </div>
+</div>
+
+<script>
+const API = "https://bpms-voice.beautygenaiapp.workers.dev";
+let TOKEN = "";
+
+function show(el, text, ok){ el.textContent=text; el.className="msg show "+(ok?"ok":"err"); }
+function hide(el){ el.className="msg"; }
+
+async function api(path, opts){
+  opts = opts || {};
+  opts.headers = Object.assign({ "x-admin-token": TOKEN, "Content-Type":"application/json" }, opts.headers||{});
+  const r = await fetch(API+path, opts);
+  let data=null; try{ data=await r.json(); }catch(e){}
+  return { ok:r.ok, status:r.status, data };
+}
+
+function pillFor(c){
+  if(c.available<=0) return '<span class="pill zero">0</span>';
+  if(c.available < 2000) return '<span class="pill low">'+c.available+'</span>';
+  return '<span class="pill ok">'+c.available+'</span>';
+}
+
+async function loadClients(){
+  const wrap=document.getElementById("tableWrap");
+  wrap.innerHTML='<span class="muted">Cargando…</span>';
+  const res=await api("/admin/clients");
+  if(!res.ok){ wrap.innerHTML='<span class="muted">Error al cargar ('+res.status+').</span>'; return; }
+  const cs=res.data.clients||[];
+  if(!cs.length){ wrap.innerHTML='<span class="muted">Aún no hay clientes. Crea el primero abajo.</span>'; return; }
+  let h='<div style="overflow-x:auto"><table><thead><tr>'
+    +'<th>Cliente</th><th>Token</th><th class="num">Incluidos/mes</th><th class="num">Usado mes</th>'
+    +'<th class="num">Extra</th><th class="num">Disponible</th><th>Último uso</th></tr></thead><tbody>';
+  for(const c of cs){
+    h+='<tr><td>'+esc(c.name)+'<div class="muted" style="font-size:11px">'+esc(c.id)+(c.active?'':' · inactivo')+'</div></td>'
+      +'<td class="tok">'+esc(c.token)+'</td>'
+      +'<td class="num">'+c.includedPerMonth+'</td>'
+      +'<td class="num">'+c.usedMonth+'</td>'
+      +'<td class="num">'+c.extraBalance+'</td>'
+      +'<td class="num">'+pillFor(c)+'</td>'
+      +'<td class="muted">'+(c.lastUsed?c.lastUsed.slice(0,16).replace("T"," "):"—")+'</td></tr>';
+  }
+  h+='</tbody></table></div>';
+  wrap.innerHTML=h;
+}
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+
+async function doLogin(){
+  const t=document.getElementById("adminTok").value.trim();
+  if(!t){ show(document.getElementById("loginMsg"),"Escribe tu token.",false); return; }
+  TOKEN=t;
+  const res=await api("/admin/clients");
+  if(!res.ok){ show(document.getElementById("loginMsg"),"Token incorrecto o sin conexión.",false); TOKEN=""; return; }
+  if(document.getElementById("remember").checked){ try{ localStorage.setItem("bpms_adm",t); }catch(e){} }
+  document.getElementById("loginCard").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  loadClients();
+}
+
+document.getElementById("btnLogin").onclick=doLogin;
+document.getElementById("adminTok").addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
+
+document.getElementById("btnSave").onclick=async()=>{
+  const m=document.getElementById("saveMsg");
+  const payload={
+    id:document.getElementById("cId").value.trim(),
+    name:document.getElementById("cName").value.trim(),
+    includedPerMonth:parseInt(document.getElementById("cIncl").value||"0",10),
+    extraBalance:parseInt(document.getElementById("cExtra").value||"0",10)
+  };
+  const tok=document.getElementById("cTok").value.trim(); if(tok) payload.token=tok;
+  if(!payload.id){ show(m,"Falta el ID.",false); return; }
+  const res=await api("/admin/client",{method:"POST",body:JSON.stringify(payload)});
+  if(res.ok){ show(m,"Guardado. Token del cliente: "+res.data.client.token,true); loadClients(); }
+  else show(m,"Error: "+(res.data&&res.data.error||res.status),false);
+};
+
+document.getElementById("btnCredit").onclick=async()=>{
+  const m=document.getElementById("credMsg");
+  const id=document.getElementById("rId").value.trim();
+  const add=parseInt(document.getElementById("rAdd").value||"0",10);
+  if(!id){ show(m,"Falta el ID.",false); return; }
+  const res=await api("/admin/credit",{method:"POST",body:JSON.stringify({id,addCredits:add})});
+  if(res.ok){ show(m,"Recargado. Nuevo saldo extra: "+res.data.extraBalance,true); loadClients(); }
+  else show(m,"Error: "+(res.data&&res.data.error||res.status),false);
+};
+
+document.getElementById("btnReload").onclick=loadClients;
+document.getElementById("logout").onclick=(e)=>{ e.preventDefault(); try{localStorage.removeItem("bpms_adm");}catch(e){} location.reload(); };
+
+// auto-login si hay token guardado
+(function(){ let t=null; try{ t=localStorage.getItem("bpms_adm"); }catch(e){}
+  if(t){ document.getElementById("adminTok").value=t; doLogin(); } })();
+</script>
+</body>
+</html>
