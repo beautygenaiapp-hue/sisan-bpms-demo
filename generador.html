@@ -65,7 +65,7 @@
 <div class="wrap">
   <header>
     <h1>BPMS Online</h1><span class="tag">Generador de anuncios</span>
-    <span class="bal hidden" id="bal">Créditos: <span class="n" id="balN">0</span></span>
+    <span class="bal hidden" id="bal">Anuncios: <span class="n" id="balN">0</span></span>
   </header>
   <p class="sub">Crea el anuncio con voz de locutor profesional. Escoge la voz, el tono, escribe tu mensaje y genera.</p>
 
@@ -96,7 +96,7 @@
       <label>Contraseña (mínimo 6 caracteres)</label>
       <input id="rPass" type="password" autocomplete="new-password" placeholder="crea tu contraseña">
       <button id="btnReg">Crear mi cuenta</button>
-      <div class="foot">Al crear tu cuenta aún no tienes créditos. Para generar anuncios, compra créditos (próximamente con pago en línea).</div>
+      <div class="foot">Al crear tu cuenta aún no tienes anuncios disponibles. Para generar, compra un paquete de anuncios (próximamente con pago en línea).</div>
       <div class="msg" id="regMsg"></div>
     </div>
   </div>
@@ -114,8 +114,8 @@
     </div>
     <div class="card">
       <h2>3 · Escribe tu anuncio</h2>
-      <textarea id="text" maxlength="2500" placeholder="Ejemplo: ¡Esta semana en tu tienda favorita, grandes ofertas en toda la mercancía! Ven hoy y aprovecha. Te esperamos."></textarea>
-      <div class="counter" id="counter">0 caracteres · ~0 créditos</div>
+      <textarea id="text" maxlength="3000" placeholder="Ejemplo: ¡Esta semana en tu tienda favorita, grandes ofertas en toda la mercancía! Ven hoy y aprovecha. Te esperamos."></textarea>
+      <div class="counter" id="counter">0 caracteres · 1 anuncio</div>
       <div class="msg err" id="filterMsg"></div>
     </div>
     <div class="card">
@@ -173,7 +173,7 @@ function setBal(n){
   BAL=n|0;
   const el=document.getElementById("balN");
   el.textContent=BAL.toLocaleString("es");
-  el.className="n"+(BAL<=0?" zero":(BAL<1500?" low":""));
+  el.className="n"+(BAL<=0?" zero":(BAL<5?" low":""));
   document.getElementById("bal").classList.remove("hidden");
 }
 
@@ -189,7 +189,7 @@ function enterApp(name,available){
   document.getElementById("app").classList.remove("hidden");
   setBal(available||0);
   const g=document.getElementById("genMsg");
-  if((available||0)<=0) show(g,"Tu cuenta no tiene créditos. Para generar anuncios necesitas comprar créditos (pago en línea, próximamente).","warn");
+  if((available||0)<=0) show(g,"Tu cuenta no tiene anuncios disponibles. Para generar necesitas comprar un paquete de anuncios (pago en línea, próximamente).","warn");
 }
 
 // Tabs
@@ -252,10 +252,12 @@ function renderTones(){
     box.appendChild(t);
   });
 }
+function adsCost(n){ return Math.max(1, Math.ceil(n/600)); }
 const textEl=document.getElementById("text");
 textEl.addEventListener("input",()=>{
   const n=textEl.value.length;
-  document.getElementById("counter").textContent=n+" caracteres · ~"+n+" créditos";
+  const c=adsCost(n);
+  document.getElementById("counter").textContent=n+" caracteres · "+c+" anuncio"+(c===1?"":"s");
   hide(document.getElementById("filterMsg"));
 });
 
@@ -267,7 +269,7 @@ document.getElementById("btnGen").onclick=async()=>{
   const bad=findBad(text);
   if(bad){ show(document.getElementById("filterMsg"),"El texto contiene contenido no permitido. Quita las palabras inapropiadas y vuelve a intentar.","err"); return; }
   hide(document.getElementById("filterMsg"));
-  if(BAL<text.length){ show(m,"No te alcanzan los créditos (necesitas "+text.length+", tienes "+BAL+"). Compra créditos para continuar.","warn"); return; }
+  // No bloqueamos aquí por saldo: las regeneraciones del mismo texto son gratis y las decide el servidor.
 
   const btn=document.getElementById("btnGen");
   btn.disabled=true; btn.innerHTML='<span class="spin"></span>Generando…';
@@ -275,18 +277,21 @@ document.getElementById("btnGen").onclick=async()=>{
   try{
     const r=await fetch(API+"/tts",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({token:TOKEN,text:text,voice_id:voiceId,voice_settings:TONES[toneKey].vs})});
-    if(r.status===402){ const d=await r.json(); setBal(d.available||0); show(m,"Sin créditos suficientes (necesitas "+d.needed+", tienes "+d.available+"). Compra créditos.","warn"); return; }
+    if(r.status===402){ const d=await r.json(); setBal(d.available||0); show(m,"No te alcanzan los anuncios (este cuesta "+d.needed+", tienes "+d.available+"). Compra un paquete para continuar.","warn"); return; }
     if(r.status===401){ show(m,"Sesión inválida. Entra de nuevo.","err"); return; }
     if(!r.ok){ show(m,"No se pudo generar ("+r.status+"). Intenta de nuevo.","err"); return; }
-    const charged=r.headers.get("X-Credits-Charged");
-    const remaining=r.headers.get("X-Credits-Remaining");
+    const charged=parseInt(r.headers.get("X-Ads-Charged")||"0",10);
+    const remaining=r.headers.get("X-Ads-Remaining");
+    const regen=r.headers.get("X-Ads-Regen");
     if(remaining!=null) setBal(parseInt(remaining,10));
     const buf=await r.arrayBuffer();
     const url=URL.createObjectURL(new Blob([buf],{type:"audio/mpeg"}));
     document.getElementById("player").src=url;
     document.getElementById("dl").href=url;
     document.getElementById("result").classList.add("show");
-    show(m,"¡Anuncio generado!"+(charged?" Créditos usados: "+charged:""),"ok");
+    let okMsg = charged>0 ? ("¡Anuncio generado! Se descontó "+charged+" anuncio"+(charged===1?"":"s")+".") : "¡Regeneración gratis!";
+    if(regen!=null) okMsg += " Te quedan "+regen+" regeneración"+(regen==="1"?"":"es")+" gratis de este texto.";
+    show(m, okMsg, "ok");
     document.getElementById("player").play().catch(()=>{});
   }catch(e){
     show(m,"Error de conexión. Intenta de nuevo.","err");
