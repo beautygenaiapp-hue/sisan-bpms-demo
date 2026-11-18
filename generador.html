@@ -59,6 +59,11 @@
   .bal .n{font-weight:700;color:var(--ok)}
   .bal .n.zero{color:var(--bad)}
   .bal .n.low{color:var(--warn)}
+  .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .plan{display:flex;flex-direction:column;align-items:flex-start;gap:3px;background:var(--panel2);border:1.5px solid var(--line);color:var(--ink);border-radius:12px;padding:14px;cursor:pointer;font-weight:700;font-size:15px;text-align:left}
+  .plan:hover{border-color:var(--acc)}
+  .plan:disabled{opacity:.6;cursor:wait}
+  .plan span{font-weight:500;font-size:12px;color:var(--mut)}
 </style>
 </head>
 <body>
@@ -129,6 +134,18 @@
         <audio id="player" controls></audio>
         <div style="margin-top:10px"><a id="dl" download="anuncio.mp3"><button class="ghost">⬇ Descargar MP3</button></a></div>
       </div>
+    </div>
+    <div class="card" id="buyCard">
+      <h2>Comprar anuncios</h2>
+      <div class="foot" style="margin-bottom:12px">Pago seguro con Stripe. Las suscripciones renuevan cada mes; las recargas son pago único.</div>
+      <div class="plans" id="plans">
+        <button class="plan" data-plan="basico">Básico<span>$39.99/mes · 20 anuncios</span></button>
+        <button class="plan" data-plan="comercio">Comercio<span>$59/mes · 50 anuncios</span></button>
+        <button class="plan" data-plan="pro">Pro<span>$99/mes · 120 anuncios</span></button>
+        <button class="plan" data-plan="recarga10">Recarga 10<span>$25 · pago único</span></button>
+        <button class="plan" data-plan="recarga25">Recarga 25<span>$55 · pago único</span></button>
+      </div>
+      <div class="msg" id="buyMsg"></div>
     </div>
     <p class="foot">Sesión guardada solo en este navegador. <a href="#" id="logout">Cerrar sesión</a></p>
   </div>
@@ -300,6 +317,19 @@ document.getElementById("btnGen").onclick=async()=>{
   }
 };
 
+// Comprar (botones de planes)
+document.querySelectorAll(".plan").forEach(b=>{
+  b.onclick=async()=>{
+    const m=document.getElementById("buyMsg");
+    if(!TOKEN){ show(m,"Entra a tu cuenta primero.","err"); return; }
+    b.disabled=true; const t0=b.innerHTML; b.innerHTML='<span class="spin"></span>Abriendo pago…';
+    const res=await post("/checkout",{token:TOKEN,plan:b.dataset.plan});
+    if(res.ok && res.data && res.data.url){ window.location=res.data.url; return; }
+    show(m,(res.data&&res.data.error)||"No se pudo abrir el pago. Intenta de nuevo.","err");
+    b.disabled=false; b.innerHTML=t0;
+  };
+});
+
 document.getElementById("logout").onclick=(e)=>{ e.preventDefault(); try{localStorage.removeItem("bpms_tok");}catch(e){} location.reload(); };
 
 renderVoices(); renderTones();
@@ -308,6 +338,13 @@ renderVoices(); renderTones();
   let t=null; try{ t=localStorage.getItem("bpms_tok"); }catch(e){}
   if(t){ TOKEN=t; const res=await post("/me",{token:t});
     if(res.ok){ enterApp(res.data.name,res.data.available); } else { try{localStorage.removeItem("bpms_tok");}catch(e){} } }
+  const pago=new URLSearchParams(location.search).get("pago");
+  if(pago==="ok"){
+    const m=document.getElementById("buyMsg"); if(m) show(m,"¡Pago recibido! Tus anuncios se acreditan en unos segundos.","ok");
+    let n=0; const iv=setInterval(async()=>{ n++; if(!TOKEN||n>4){clearInterval(iv);return;} const r=await post("/me",{token:TOKEN}); if(r.ok) setBal(r.data.available); },3000);
+  } else if(pago==="cancel"){
+    const m=document.getElementById("buyMsg"); if(m) show(m,"Pago cancelado. No se te cobró.","warn");
+  }
 })();
 </script>
 </body>
