@@ -155,15 +155,27 @@
 const API = "https://bpms-voice.beautygenaiapp.workers.dev";
 
 const VOICES = [
-  { id:"RKVpHshqqScaPWQhOQin", name:"Carlos", tag:"Enérgico", desc:"Masculino enérgico. Ideal para ofertas, supermercados y promociones." },
-  { id:"ZZT8zv3RuBYaAcApKxVv", name:"Valeria", tag:"Cálida", desc:"Femenina cálida. Ideal para restaurantes, familia y servicios." },
-  { id:"YT8Y3CXB16XjQPifArob", name:"Rafael", tag:"Confiable", desc:"Masculino claro y confiable. Ideal para farmacias, salud y anuncios serios." }
+  { id:"zwDSHuqO0tEVwNUuHmR1", name:"Iván", tag:"Enérgico", desc:"Masculino joven y enérgico. Ideal para ofertas, supermercados y promociones." },
+  { id:"cryPG4aBcWsmW2cCIXjB", name:"Verónica", tag:"Femenina", desc:"Femenina puertorriqueña, versátil. Buena para variedad de anuncios." },
+  { id:"Nay4McHwumvUTFOy7JeN", name:"Vilmarie", tag:"Cálida", desc:"Femenina cálida y profesional. Ideal para spa, belleza y restaurantes." },
+  { id:"jzmAudEi0DeODCFmt4mt", name:"Leo (Serio)", tag:"Serio", desc:"Masculino profundo y serio. Ideal para farmacia, salud y anuncios formales." },
+  { id:"ISTw2UT8hNs80bzKPenA", name:"Leo (Corporativo)", tag:"Corporativo", desc:"Masculino claro y corporativo. Ideal para servicios y negocios." },
+  { id:"PViw30Yy6EVxX5CJxFEd", name:"José", tag:"Narrador", desc:"Masculino cálido, estilo narrador. Ideal para anuncios con historia y barbería." },
+  { id:"lxKLOtQettK0KcpfGqVT", name:"Berto", tag:"Natural", desc:"Masculino natural en español. Versátil para anuncios generales." },
+  { id:"i56wvBZ6YDvhliv2XKIM", name:"Joseph", tag:"Calmado", desc:"Masculino profundo y calmado. Ideal para mensajes tranquilos y salud." },
+  { id:"kcsUqKsJMPz7j3H6QPNd", name:"Danny", tag:"Claro", desc:"Masculino claro y cautivador. Ideal para gimnasios y promociones." },
+  { id:"4ex71F9amHzL0fiUD2y1", name:"Carlos Figueroa", tag:"Casual", desc:"Masculino casual y cercano. Ideal para anuncios relajados y barbería." },
+  { id:"HNIpMlHudYj9dX9ZYSGZ", name:"Sam", tag:"Versátil", desc:"Masculino versátil. Para todo tipo de anuncios." },
+  { id:"yrsDrziGZnWsTlefm9Gi", name:"Nemesiel", tag:"Dinámico", desc:"Masculino dinámico. Ideal para eventos y promociones." }
 ];
 const TONES = {
   energico: { label:"Enérgico", vs:{ stability:0.35, similarity_boost:0.85, style:0.60, use_speaker_boost:true, speed:1.04 } },
   urgente:  { label:"Urgente",  vs:{ stability:0.30, similarity_boost:0.85, style:0.75, use_speaker_boost:true, speed:1.10 } },
   calido:   { label:"Cálido",   vs:{ stability:0.55, similarity_boost:0.80, style:0.30, use_speaker_boost:true, speed:1.00 } },
-  serio:    { label:"Serio",    vs:{ stability:0.70, similarity_boost:0.80, style:0.15, use_speaker_boost:true, speed:0.98 } }
+  serio:    { label:"Serio",    vs:{ stability:0.70, similarity_boost:0.80, style:0.15, use_speaker_boost:true, speed:0.98 } },
+  festivo:  { label:"Festivo",  vs:{ stability:0.30, similarity_boost:0.85, style:0.72, use_speaker_boost:true, speed:1.08 } },
+  promocion:{ label:"Promoción",vs:{ stability:0.26, similarity_boost:0.90, style:0.82, use_speaker_boost:true, speed:1.12 } },
+  institucional:{ label:"Institucional", vs:{ stability:0.78, similarity_boost:0.80, style:0.10, use_speaker_boost:true, speed:0.97 } }
 };
 const BLOCK = [
   "reggaeton","reguetón","regueton","perreo",
