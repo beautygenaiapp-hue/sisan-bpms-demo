@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BPMS Online — Generador de anuncios</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel2:#1c2430; --line:#2a3340;
+    --ink:#e8eef6; --mut:#8a97a8; --acc:#ff7a2f; --ok:#2fbf71; --warn:#e5b23c; --bad:#e5544b; --r:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .wrap{max-width:860px;margin:0 auto;padding:24px 16px 72px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:6px;flex-wrap:wrap}
+  header h1{font-size:19px;margin:0;letter-spacing:.3px}
+  header .tag{font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:2px 10px}
+  .sub{color:var(--mut);margin:0 0 20px;font-size:13px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-bottom:16px}
+  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--mut);margin:0 0 14px}
+  label{display:block;font-size:12px;color:var(--mut);margin:0 0 6px}
+  input,textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--ink);
+    padding:11px 13px;font-size:15px;outline:none;font-family:inherit;margin-bottom:12px}
+  input:focus,textarea:focus{border-color:var(--acc)}
+  textarea{min-height:120px;resize:vertical;line-height:1.55;margin-bottom:0}
+  button{background:var(--acc);color:#0a0d12;border:0;border-radius:10px;padding:12px 20px;font-weight:700;font-size:15px;cursor:pointer}
+  button:hover{filter:brightness(1.08)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:500;padding:8px 14px;font-size:13px}
+  .tabs{display:flex;gap:8px;margin-bottom:16px}
+  .tab{flex:1;text-align:center;background:var(--panel2);border:1.5px solid var(--line);border-radius:10px;padding:10px;cursor:pointer;font-weight:600}
+  .tab.sel{border-color:var(--acc);color:var(--acc)}
+  .voices{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .voice{background:var(--panel2);border:1.5px solid var(--line);border-radius:12px;padding:14px;cursor:pointer;transition:border-color .15s}
+  .voice:hover{border-color:#3a4658}
+  .voice.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
+  .voice .vn{font-weight:700;font-size:15px;margin-bottom:2px}
+  .voice .vd{font-size:12px;color:var(--mut);line-height:1.4}
+  .voice .vg{display:inline-block;margin-top:8px;font-size:11px;color:var(--acc);border:1px solid var(--acc);border-radius:999px;padding:1px 9px}
+  .tones{display:flex;flex-wrap:wrap;gap:8px}
+  .tone{background:var(--panel2);border:1.5px solid var(--line);border-radius:999px;padding:8px 16px;cursor:pointer;font-size:14px}
+  .tone.sel{border-color:var(--acc);color:var(--acc)}
+  .counter{font-size:12px;color:var(--mut);margin-top:6px;text-align:right}
+  .msg{font-size:13px;padding:10px 14px;border-radius:10px;margin-top:12px;display:none}
+  .msg.show{display:block}
+  .msg.ok{background:rgba(47,191,113,.12);color:var(--ok)}
+  .msg.err{background:rgba(229,84,75,.12);color:var(--bad)}
+  .msg.warn{background:rgba(229,178,60,.12);color:var(--warn)}
+  .gen-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .result{margin-top:16px;display:none}
+  .result.show{display:block}
+  audio{width:100%;margin-top:6px}
+  .hidden{display:none !important}
+  .foot{color:var(--mut);font-size:12px;margin-top:10px}
+  .spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#0a0d12;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-3px;margin-right:8px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  a{color:var(--acc)}
+  .bal{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13px}
+  .bal .n{font-weight:700;color:var(--ok)}
+  .bal .n.zero{color:var(--bad)}
+  .bal .n.low{color:var(--warn)}
+  .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .plan{display:flex;flex-direction:column;align-items:flex-start;gap:3px;background:var(--panel2);border:1.5px solid var(--line);color:var(--ink);border-radius:12px;padding:14px;cursor:pointer;font-weight:700;font-size:15px;text-align:left}
+  .plan:hover{border-color:var(--acc)}
+  .plan:disabled{opacity:.6;cursor:wait}
+  .plan span{font-weight:500;font-size:12px;color:var(--mut)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>BPMS Online</h1><span class="tag">Generador de anuncios</span>
+    <span class="bal hidden" id="bal">Anuncios: <span class="n" id="balN">0</span></span>
+  </header>
+  <p class="sub">Crea el anuncio con voz de locutor profesional. Escoge la voz, el tono, escribe tu mensaje y genera.</p>
+
+  <!-- Acceso -->
+  <div class="card" id="authCard">
+    <div class="tabs">
+      <div class="tab sel" id="tabLogin">Entrar</div>
+      <div class="tab" id="tabReg">Crear cuenta</div>
+    </div>
+
+    <!-- Login -->
+    <div id="loginPane">
+      <label>Usuario</label>
+      <input id="lUser" autocomplete="username" placeholder="tu usuario">
+      <label>Contraseña</label>
+      <input id="lPass" type="password" autocomplete="current-password" placeholder="tu contraseña">
+      <button id="btnLogin">Entrar</button>
+      <label style="display:inline-block;margin-left:10px;color:var(--mut)"><input type="checkbox" id="remember" style="width:auto;margin:0 6px 0 0" checked>recordar en este equipo</label>
+      <div class="msg err" id="loginMsg"></div>
+    </div>
+
+    <!-- Registro -->
+    <div id="regPane" class="hidden">
+      <label>Nombre del negocio</label>
+      <input id="rName" placeholder="Ej: Supermercado La Economía">
+      <label>Usuario (letras, números, _ o -)</label>
+      <input id="rUser" autocomplete="username" placeholder="escoge tu usuario">
+      <label>Contraseña (mínimo 6 caracteres)</label>
+      <input id="rPass" type="password" autocomplete="new-password" placeholder="crea tu contraseña">
+      <button id="btnReg">Crear mi cuenta</button>
+      <div class="foot">Al crear tu cuenta aún no tienes anuncios disponibles. Para generar, compra un paquete de anuncios (próximamente con pago en línea).</div>
+      <div class="msg" id="regMsg"></div>
+    </div>
+  </div>
+
+  <!-- App -->
+  <div id="app" class="hidden">
+    <div class="card">
+      <h2>1 · Escoge el locutor</h2>
+      <div class="voices" id="voices"></div>
+    </div>
+    <div class="card">
+      <h2>2 · Escoge el tono</h2>
+      <div class="tones" id="tones"></div>
+      <div class="foot">El tono ajusta la entrega de la voz (energía, calma, seriedad).</div>
+    </div>
+    <div class="card">
+      <h2>3 · Escribe tu anuncio</h2>
+      <textarea id="text" maxlength="3000" placeholder="Ejemplo: ¡Esta semana en tu tienda favorita, grandes ofertas en toda la mercancía! Ven hoy y aprovecha. Te esperamos."></textarea>
+      <div class="counter" id="counter">0 caracteres · 1 anuncio</div>
+      <div class="msg err" id="filterMsg"></div>
+    </div>
+    <div class="card">
+      <div class="gen-row">
+        <button id="btnGen">Generar anuncio</button>
+        <span class="foot" id="genHint">La música de fondo se añade en el siguiente paso (próximamente).</span>
+      </div>
+      <div class="msg" id="genMsg"></div>
+      <div class="result" id="result">
+        <label>Tu anuncio (voz):</label>
+        <audio id="player" controls></audio>
+        <div style="margin-top:10px"><a id="dl" download="anuncio.mp3"><button class="ghost">⬇ Descargar MP3</button></a></div>
+      </div>
+    </div>
+    <div class="card" id="buyCard">
+      <h2>Comprar anuncios</h2>
+      <div class="foot" style="margin-bottom:12px">Pago seguro con Stripe. Las suscripciones renuevan cada mes; las recargas son pago único.</div>
+      <div class="plans" id="plans">
+        <button class="plan" data-plan="basico">Básico<span>$39.99/mes · 20 anuncios</span></button>
+        <button class="plan" data-plan="comercio">Comercio<span>$59/mes · 50 anuncios</span></button>
+        <button class="plan" data-plan="pro">Pro<span>$99/mes · 120 anuncios</span></button>
+        <button class="plan" data-plan="recarga10">Recarga 10<span>$25 · pago único</span></button>
+        <button class="plan" data-plan="recarga25">Recarga 25<span>$55 · pago único</span></button>
+      </div>
+      <div class="msg" id="buyMsg"></div>
+    </div>
+    <p class="foot">Sesión guardada solo en este navegador. <a href="#" id="logout">Cerrar sesión</a></p>
+  </div>
+</div>
+
+<script>
+const API = "https://bpms-voice.beautygenaiapp.workers.dev";
+
+const VOICES = [
+  { id:"zwDSHuqO0tEVwNUuHmR1", name:"Iván", tag:"Enérgico", desc:"Masculino joven y enérgico. Ideal para ofertas, supermercados y promociones." },
+  { id:"cryPG4aBcWsmW2cCIXjB", name:"Verónica", tag:"Femenina", desc:"Femenina puertorriqueña, versátil. Buena para variedad de anuncios." },
+  { id:"Nay4McHwumvUTFOy7JeN", name:"Vilmarie", tag:"Cálida", desc:"Femenina cálida y profesional. Ideal para spa, belleza y restaurantes." },
+  { id:"jzmAudEi0DeODCFmt4mt", name:"Leo (Serio)", tag:"Serio", desc:"Masculino profundo y serio. Ideal para farmacia, salud y anuncios formales." },
+  { id:"ISTw2UT8hNs80bzKPenA", name:"Leo (Corporativo)", tag:"Corporativo", desc:"Masculino claro y corporativo. Ideal para servicios y negocios." },
+  { id:"PViw30Yy6EVxX5CJxFEd", name:"José", tag:"Narrador", desc:"Masculino cálido, estilo narrador. Ideal para anuncios con historia y barbería." },
+  { id:"lxKLOtQettK0KcpfGqVT", name:"Berto", tag:"Natural", desc:"Masculino natural en español. Versátil para anuncios generales." },
+  { id:"i56wvBZ6YDvhliv2XKIM", name:"Joseph", tag:"Calmado", desc:"Masculino profundo y calmado. Ideal para mensajes tranquilos y salud." },
+  { id:"kcsUqKsJMPz7j3H6QPNd", name:"Danny", tag:"Claro", desc:"Masculino claro y cautivador. Ideal para gimnasios y promociones." },
+  { id:"4ex71F9amHzL0fiUD2y1", name:"Carlos Figueroa", tag:"Casual", desc:"Masculino casual y cercano. Ideal para anuncios relajados y barbería." },
+  { id:"HNIpMlHudYj9dX9ZYSGZ", name:"Sam", tag:"Versátil", desc:"Masculino versátil. Para todo tipo de anuncios." },
+  { id:"yrsDrziGZnWsTlefm9Gi", name:"Nemesiel", tag:"Dinámico", desc:"Masculino dinámico. Ideal para eventos y promociones." }
+];
+const TONES = {
+  energico: { label:"Enérgico", vs:{ stability:0.35, similarity_boost:0.85, style:0.60, use_speaker_boost:true, speed:1.02 } },
+  urgente:  { label:"Urgente",  vs:{ stability:0.30, similarity_boost:0.85, style:0.68, use_speaker_boost:true, speed:1.05 } },
+  calido:   { label:"Cálido",   vs:{ stability:0.60, similarity_boost:0.80, style:0.25, use_speaker_boost:true, speed:0.98 } },
+  serio:    { label:"Serio",    vs:{ stability:0.80, similarity_boost:0.80, style:0.08, use_speaker_boost:true, speed:0.96 } },
+  festivo:  { label:"Festivo",  vs:{ stability:0.35, similarity_boost:0.85, style:0.62, use_speaker_boost:true, speed:1.03 } },
+  promocion:{ label:"Promoción",vs:{ stability:0.28, similarity_boost:0.88, style:0.72, use_speaker_boost:true, speed:1.05 } },
+  institucional:{ label:"Institucional", vs:{ stability:0.85, similarity_boost:0.80, style:0.05, use_speaker_boost:true, speed:0.95 } }
+};
+const BLOCK = [
+  "reggaeton","reguetón","regueton","perreo",
+  "coño","cono","carajo","cabron","cabrón","puta","puto","puton","putón","mierda","joder","pendejo","pendeja",
+  "mamon","mamón","mamabicho","chingar","chingada","verga","pinga","culero","maricon","maricón",
+  "sexo","sexual","porno","xxx","desnuda","desnudo","orgasmo","tetas","nalgas","follar","cachonda","cachondo"
+];
+function norm(s){ return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,""); }
+function findBad(text){
+  const t=norm(text);
+  for(const w of BLOCK){
+    const re=new RegExp("(^|[^a-z0-9])"+norm(w).replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"([^a-z0-9]|$)");
+    if(re.test(t)) return w;
+  }
+  return null;
+}
+
+let TOKEN="", voiceId=VOICES[0].id, toneKey="energico", BAL=0;
+
+function show(el,t,cls){ el.textContent=t; el.className="msg show "+cls; }
+function hide(el){ el.className="msg"; }
+
+function setBal(n){
+  BAL=n|0;
+  const el=document.getElementById("balN");
+  el.textContent=BAL.toLocaleString("es");
+  el.className="n"+(BAL<=0?" zero":(BAL<5?" low":""));
+  document.getElementById("bal").classList.remove("hidden");
+}
+
+async function post(path,body){
+  const r=await fetch(API+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  let d=null; try{ d=await r.json(); }catch(e){}
+  return { ok:r.ok, status:r.status, data:d, headers:r.headers };
+}
+
+function enterApp(name,available){
+  TOKEN=TOKEN;
+  document.getElementById("authCard").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  setBal(available||0);
+  const g=document.getElementById("genMsg");
+  if((available||0)<=0) show(g,"Tu cuenta no tiene anuncios disponibles. Para generar necesitas comprar un paquete de anuncios (pago en línea, próximamente).","warn");
+}
+
+// Tabs
+document.getElementById("tabLogin").onclick=()=>{
+  document.getElementById("tabLogin").classList.add("sel"); document.getElementById("tabReg").classList.remove("sel");
+  document.getElementById("loginPane").classList.remove("hidden"); document.getElementById("regPane").classList.add("hidden");
+};
+document.getElementById("tabReg").onclick=()=>{
+  document.getElementById("tabReg").classList.add("sel"); document.getElementById("tabLogin").classList.remove("sel");
+  document.getElementById("regPane").classList.remove("hidden"); document.getElementById("loginPane").classList.add("hidden");
+};
+
+// Login
+async function doLogin(){
+  const m=document.getElementById("loginMsg"); hide(m);
+  const u=document.getElementById("lUser").value.trim();
+  const p=document.getElementById("lPass").value;
+  if(!u||!p){ show(m,"Escribe usuario y contraseña.","err"); return; }
+  const res=await post("/login",{username:u,password:p});
+  if(!res.ok){ show(m,(res.data&&res.data.error)||"No se pudo entrar.","err"); return; }
+  TOKEN=res.data.token;
+  if(document.getElementById("remember").checked){ try{ localStorage.setItem("bpms_tok",TOKEN); }catch(e){} }
+  enterApp(res.data.name,res.data.available);
+}
+document.getElementById("btnLogin").onclick=doLogin;
+document.getElementById("lPass").addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
+
+// Registro
+document.getElementById("btnReg").onclick=async()=>{
+  const m=document.getElementById("regMsg"); hide(m);
+  const name=document.getElementById("rName").value.trim();
+  const u=document.getElementById("rUser").value.trim();
+  const p=document.getElementById("rPass").value;
+  if(!u||!p){ show(m,"Escribe usuario y contraseña.","err"); return; }
+  const res=await post("/register",{username:u,password:p,name:name});
+  if(!res.ok){ show(m,(res.data&&res.data.error)||"No se pudo crear la cuenta.","err"); return; }
+  TOKEN=res.data.token;
+  try{ localStorage.setItem("bpms_tok",TOKEN); }catch(e){}
+  enterApp(res.data.name,res.data.available);
+};
+
+// Voces / tonos
+function renderVoices(){
+  const box=document.getElementById("voices"); box.innerHTML="";
+  VOICES.forEach(v=>{
+    const d=document.createElement("div");
+    d.className="voice"+(v.id===voiceId?" sel":"");
+    d.innerHTML='<div class="vn">'+v.name+'</div><div class="vd">'+v.desc+'</div><span class="vg">'+v.tag+'</span>';
+    d.onclick=()=>{ voiceId=v.id; renderVoices(); };
+    box.appendChild(d);
+  });
+}
+function renderTones(){
+  const box=document.getElementById("tones"); box.innerHTML="";
+  Object.keys(TONES).forEach(k=>{
+    const t=document.createElement("div");
+    t.className="tone"+(k===toneKey?" sel":"");
+    t.textContent=TONES[k].label;
+    t.onclick=()=>{ toneKey=k; renderTones(); };
+    box.appendChild(t);
+  });
+}
+function adsCost(n){ return Math.max(1, Math.ceil(n/600)); }
+const textEl=document.getElementById("text");
+textEl.addEventListener("input",()=>{
+  const n=textEl.value.length;
+  const c=adsCost(n);
+  document.getElementById("counter").textContent=n+" caracteres · "+c+" anuncio"+(c===1?"":"s");
+  hide(document.getElementById("filterMsg"));
+});
+
+// Generar
+document.getElementById("btnGen").onclick=async()=>{
+  const m=document.getElementById("genMsg");
+  const text=textEl.value.trim();
+  if(!text){ show(m,"Escribe el texto del anuncio.","err"); return; }
+  const bad=findBad(text);
+  if(bad){ show(document.getElementById("filterMsg"),"El texto contiene contenido no permitido. Quita las palabras inapropiadas y vuelve a intentar.","err"); return; }
+  hide(document.getElementById("filterMsg"));
+  // No bloqueamos aquí por saldo: las regeneraciones del mismo texto son gratis y las decide el servidor.
+
+  const btn=document.getElementById("btnGen");
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>Generando…';
+  hide(m); document.getElementById("result").classList.remove("show");
+  try{
+    const r=await fetch(API+"/tts",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({token:TOKEN,text:text,voice_id:voiceId,model:"eleven_v3",voice_settings:TONES[toneKey].vs})});
+    if(r.status===402){ const d=await r.json(); setBal(d.available||0); show(m,"No te alcanzan los anuncios (este cuesta "+d.needed+", tienes "+d.available+"). Compra un paquete para continuar.","warn"); return; }
+    if(r.status===401){ show(m,"Sesión inválida. Entra de nuevo.","err"); return; }
+    if(!r.ok){ show(m,"No se pudo generar ("+r.status+"). Intenta de nuevo.","err"); return; }
+    const charged=parseInt(r.headers.get("X-Ads-Charged")||"0",10);
+    const remaining=r.headers.get("X-Ads-Remaining");
+    const regen=r.headers.get("X-Ads-Regen");
+    if(remaining!=null) setBal(parseInt(remaining,10));
+    const buf=await r.arrayBuffer();
+    const url=URL.createObjectURL(new Blob([buf],{type:"audio/mpeg"}));
+    document.getElementById("player").src=url;
+    document.getElementById("dl").href=url;
+    document.getElementById("result").classList.add("show");
+    let okMsg = charged>0 ? ("¡Anuncio generado! Se descontó "+charged+" anuncio"+(charged===1?"":"s")+".") : "¡Regeneración gratis!";
+    if(regen!=null) okMsg += " Te quedan "+regen+" regeneración"+(regen==="1"?"":"es")+" gratis de este texto.";
+    show(m, okMsg, "ok");
+    document.getElementById("player").play().catch(()=>{});
+  }catch(e){
+    show(m,"Error de conexión. Intenta de nuevo.","err");
+  }finally{
+    btn.disabled=false; btn.textContent="Generar anuncio";
+  }
+};
+
+// Comprar (botones de planes)
+document.querySelectorAll(".plan").forEach(b=>{
+  b.onclick=async()=>{
+    const m=document.getElementById("buyMsg");
+    if(!TOKEN){ show(m,"Entra a tu cuenta primero.","err"); return; }
+    b.disabled=true; const t0=b.innerHTML; b.innerHTML='<span class="spin"></span>Abriendo pago…';
+    const res=await post("/checkout",{token:TOKEN,plan:b.dataset.plan});
+    if(res.ok && res.data && res.data.url){ window.location=res.data.url; return; }
+    show(m,(res.data&&res.data.error)||"No se pudo abrir el pago. Intenta de nuevo.","err");
+    b.disabled=false; b.innerHTML=t0;
+  };
+});
+
+document.getElementById("logout").onclick=(e)=>{ e.preventDefault(); try{localStorage.removeItem("bpms_tok");}catch(e){} location.reload(); };
+
+renderVoices(); renderTones();
+// auto-sesión si hay token guardado
+(async function(){
+  let t=null; try{ t=localStorage.getItem("bpms_tok"); }catch(e){}
+  if(t){ TOKEN=t; const res=await post("/me",{token:t});
+    if(res.ok){ enterApp(res.data.name,res.data.available); } else { try{localStorage.removeItem("bpms_tok");}catch(e){} } }
+  const pago=new URLSearchParams(location.search).get("pago");
+  if(pago==="ok"){
+    const m=document.getElementById("buyMsg"); if(m) show(m,"¡Pago recibido! Tus anuncios se acreditan en unos segundos.","ok");
+    let n=0; const iv=setInterval(async()=>{ n++; if(!TOKEN||n>4){clearInterval(iv);return;} const r=await post("/me",{token:TOKEN}); if(r.ok) setBal(r.data.available); },3000);
+  } else if(pago==="cancel"){
+    const m=document.getElementById("buyMsg"); if(m) show(m,"Pago cancelado. No se te cobró.","warn");
+  }
+})();
+</script>
+</body>
+</html>
