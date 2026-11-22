@@ -385,9 +385,12 @@ document.querySelectorAll(".plan").forEach(b=>{
 document.getElementById("logout").onclick=(e)=>{ e.preventDefault(); try{localStorage.removeItem("bpms_tok");}catch(e){} location.reload(); };
 
 renderVoices(); renderTones();
-// auto-sesión si hay token guardado
+// auto-sesión: 1) token en el link (?t=...)  2) token guardado
 (async function(){
-  let t=null; try{ t=localStorage.getItem("bpms_tok"); }catch(e){}
+  let t=null;
+  const urlTok=new URLSearchParams(location.search).get("t");
+  if(urlTok){ t=urlTok; try{ localStorage.setItem("bpms_tok",urlTok); }catch(e){} }
+  if(!t){ try{ t=localStorage.getItem("bpms_tok"); }catch(e){} }
   if(t){ TOKEN=t; const res=await post("/me",{token:t});
     if(res.ok){ enterApp(res.data.name,res.data.available); } else { try{localStorage.removeItem("bpms_tok");}catch(e){} } }
   const pago=new URLSearchParams(location.search).get("pago");
