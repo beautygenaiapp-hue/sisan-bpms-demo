@@ -132,7 +132,11 @@
       <div class="result" id="result">
         <label>Tu anuncio (voz):</label>
         <audio id="player" controls></audio>
-        <div style="margin-top:10px"><a id="dl" download="anuncio.mp3"><button class="ghost">⬇ Descargar MP3</button></a></div>
+        <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <button class="ghost hidden" id="btnReroll">🔄 Otra toma (gratis)</button>
+          <a id="dl" download="anuncio.mp3"><button class="ghost">⬇ Descargar MP3</button></a>
+          <span class="foot" id="takeNote"></span>
+        </div>
       </div>
     </div>
     <div class="card" id="buyCard">
@@ -189,9 +193,11 @@ function withTone(text, key){
   const close = tone.close || "";
   let parts = (text || "").replace(/\s+/g," ").trim().split(/(?<=[.!?…])\s+/).filter(Boolean);
   if(parts.length === 0) return (open ? open + " " : "") + (text || "").trim();
+  const last = parts.length - 1;
   const pieces = parts.map((p,i)=>{
-    if(i === 0 && open) return open + " " + p;
-    if(i === parts.length-1 && close) return close + " " + p;
+    if(i === 0 && open) return open + " " + p;            // apertura con el tono
+    if(i === last && close) return close + " " + p;       // cierre re-energizado (CTA/marca)
+    if(/[!¡]/.test(p) || /\?/.test(p)) return "[excited] " + p; // frases con énfasis
     return p;
   });
   return pieces.join(" [pause] ");
@@ -307,21 +313,28 @@ textEl.addEventListener("input",()=>{
   const c=adsCost(n);
   document.getElementById("counter").textContent=n+" caracteres · "+c+" anuncio"+(c===1?"":"s");
   hide(document.getElementById("filterMsg"));
+  // El texto cambió: "Otra toma" aplica al texto ya generado, así que se oculta.
+  const rr=document.getElementById("btnReroll"); if(rr) rr.classList.add("hidden");
+  const note=document.getElementById("takeNote"); if(note) note.textContent="";
 });
 
-// Generar
-document.getElementById("btnGen").onclick=async()=>{
+// Generar (una toma). El botón "Otra toma" vuelve a llamar esto con el mismo
+// texto y tono -> el servidor lo cobra gratis (regeneración) y v4 da una toma
+// distinta cada vez. Así el cliente escoge la mejor, igual que hace un director.
+async function doGenerate(){
   const m=document.getElementById("genMsg");
+  const rr=document.getElementById("btnReroll");
+  const note=document.getElementById("takeNote");
   const text=textEl.value.trim();
   if(!text){ show(m,"Escribe el texto del anuncio.","err"); return; }
   const bad=findBad(text);
   if(bad){ show(document.getElementById("filterMsg"),"El texto contiene contenido no permitido. Quita las palabras inapropiadas y vuelve a intentar.","err"); return; }
   hide(document.getElementById("filterMsg"));
-  // No bloqueamos aquí por saldo: las regeneraciones del mismo texto son gratis y las decide el servidor.
 
   const btn=document.getElementById("btnGen");
-  btn.disabled=true; btn.innerHTML='<span class="spin"></span>Generando…';
-  hide(m); document.getElementById("result").classList.remove("show");
+  btn.disabled=true; if(rr) rr.disabled=true;
+  btn.innerHTML='<span class="spin"></span>Generando…';
+  hide(m);
   try{
     const r=await fetch(API+"/tts",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({token:TOKEN,text:withTone(text,toneKey),voice_id:voiceId,model:"eleven_v4",voice_settings:VS})});
@@ -337,16 +350,24 @@ document.getElementById("btnGen").onclick=async()=>{
     document.getElementById("player").src=url;
     document.getElementById("dl").href=url;
     document.getElementById("result").classList.add("show");
-    let okMsg = charged>0 ? ("¡Anuncio generado! Se descontó "+charged+" anuncio"+(charged===1?"":"s")+".") : "¡Regeneración gratis!";
-    if(regen!=null) okMsg += " Te quedan "+regen+" regeneración"+(regen==="1"?"":"es")+" gratis de este texto.";
+    // Tomas gratis restantes de este mismo texto
+    const regLeft = (regen!=null) ? parseInt(regen,10) : 0;
+    if(rr && note){
+      if(regLeft>0){ rr.classList.remove("hidden"); note.textContent="Te quedan "+regLeft+" toma"+(regLeft===1?"":"s")+" gratis de este texto. Si no te gusta, pide otra."; }
+      else { rr.classList.add("hidden"); note.textContent="Sin tomas gratis extra de este texto. Cambia algo del texto para empezar de nuevo."; }
+    }
+    let okMsg = charged>0 ? ("¡Anuncio generado! Se descontó "+charged+" anuncio"+(charged===1?"":"s")+". Escúchalo — si no te convence, dale “Otra toma”.") : "¡Otra toma lista, gratis! Escoge la que más te guste.";
     show(m, okMsg, "ok");
     document.getElementById("player").play().catch(()=>{});
   }catch(e){
     show(m,"Error de conexión. Intenta de nuevo.","err");
   }finally{
     btn.disabled=false; btn.textContent="Generar anuncio";
+    if(rr && !rr.classList.contains("hidden")) rr.disabled=false;
   }
-};
+}
+document.getElementById("btnGen").onclick=doGenerate;
+document.getElementById("btnReroll").onclick=doGenerate;
 
 // Comprar (botones de planes)
 document.querySelectorAll(".plan").forEach(b=>{
