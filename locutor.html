@@ -367,16 +367,18 @@ async function doGenerate(){
     const regen=r.headers.get("X-Ads-Regen");
     if(remaining!=null) setBal(parseInt(remaining,10));
     const buf=await r.arrayBuffer();
-    let finalBlob=new Blob([buf],{type:"audio/mpeg"});
+    const voiceBlob = await processVoice(buf, voiceId);   // empareja el volumen de voces bajas (ej. Leo Serio)
+    let finalBlob=voiceBlob;
     let musicNote="";
     if(musicMode==='jingle' && jingleFile){
       try{
         btn.innerHTML='<span class="spin"></span>Mezclando música…';
+        const vArr=await voiceBlob.arrayBuffer();
         const jbuf=await jingleFile.arrayBuffer();
-        finalBlob=await mixVoiceWithMusic(buf, jbuf, musicLevel);
+        finalBlob=await mixVoiceWithMusic(vArr, jbuf, musicLevel);
         musicNote=" Con tu música de fondo.";
       }catch(err){
-        finalBlob=new Blob([buf],{type:"audio/mpeg"});
+        finalBlob=voiceBlob;
         musicNote=" (No pude mezclar ese archivo — te di la voz sola. Prueba con un MP3.)";
       }
     }
@@ -496,6 +498,28 @@ function stripSilence(ctx, buf){
     pos+=len;
   }
   return out;
+}
+// Voces que se escuchan más bajo y hay que emparejarles el volumen.
+const VOICE_BOOST = { "jzmAudEi0DeODCFmt4mt": true };  // Leo (Serio)
+// Sube el volumen de una voz baja con compresión + normalización (sin clipear).
+async function processVoice(voiceArr, voiceId){
+  if(!VOICE_BOOST[voiceId]) return new Blob([voiceArr], { type:"audio/mpeg" });
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext;
+    const dec=new AC(); const vb=await dec.decodeAudioData(voiceArr.slice(0)); try{ dec.close(); }catch(e){}
+    const OAC=window.OfflineAudioContext||window.webkitOfflineAudioContext;
+    const ctx=new OAC(vb.numberOfChannels, vb.length, vb.sampleRate);
+    const src=ctx.createBufferSource(); src.buffer=vb;
+    const comp=ctx.createDynamicsCompressor();
+    comp.threshold.value=-30; comp.knee.value=12; comp.ratio.value=6; comp.attack.value=0.003; comp.release.value=0.12;
+    src.connect(comp).connect(ctx.destination); src.start(0);
+    const out=await ctx.startRendering();
+    let peak=0;
+    for(let c=0;c<out.numberOfChannels;c++){ const d=out.getChannelData(c); for(let i=0;i<d.length;i++){ const a=d[i]<0?-d[i]:d[i]; if(a>peak)peak=a; } }
+    const norm = peak>0 ? Math.min(8, 0.97/peak) : 1;
+    for(let c=0;c<out.numberOfChannels;c++){ const d=out.getChannelData(c); for(let i=0;i<d.length;i++) d[i]*=norm; }
+    return encodeMP3(out);
+  }catch(e){ return new Blob([voiceArr], { type:"audio/mpeg" }); }
 }
 async function mixVoiceWithMusic(voiceArr, jingleArr, level){
   const AC=window.AudioContext||window.webkitAudioContext;
