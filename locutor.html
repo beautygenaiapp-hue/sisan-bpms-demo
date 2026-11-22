@@ -192,14 +192,17 @@ const VOICES = [
 // sin tocar ningun otro ajuste. La emocion la dan las MARCAS dentro del texto.
 const VS = { stability:0.40, similarity_boost:0.75 };
 // open = marca de apertura ; close = marca que se re-inyecta en la frase de cierre.
+// desc = descripción del tono que la página le manda al Director (Claude) en el Worker.
+// Para añadir un tono nuevo, basta con agregarlo aquí (no hay que tocar el Worker).
 const TONES = {
-  energico:     { label:"Enérgico",     open:"[excited]",          close:"[excited]" },
-  urgente:      { label:"Urgente",      open:"[excited] [rushed]", close:"[excited]" },
-  calido:       { label:"Cálido",       open:"[warmly]",           close:"" },
-  serio:        { label:"Serio",        open:"[serious]",          close:"" },
-  festivo:      { label:"Festivo",      open:"[playful]",          close:"[excited]" },
-  promocion:    { label:"Promoción",    open:"[excited]",          close:"[proud]" },
-  institucional:{ label:"Institucional",open:"[calm]",             close:"" }
+  energico:     { label:"Enérgico",     desc:"energico y emocionado, con mucha energia",            open:"[excited]",          close:"[excited]" },
+  urgente:      { label:"Urgente",      desc:"urgente y rapido, que apura a actuar ya",             open:"[excited] [rushed]", close:"[excited]" },
+  divertido:    { label:"Divertido",    desc:"divertido, juguetón y con humor, ligero y pícaro, con una risa suave; alegre y relajado, como contando algo gracioso", open:"[playful]", close:"[laughs]" },
+  calido:       { label:"Cálido",       desc:"calido, cercano y amable",                            open:"[warmly]",           close:"" },
+  serio:        { label:"Serio",        desc:"serio, formal y con autoridad",                       open:"[serious]",          close:"" },
+  festivo:      { label:"Festivo",      desc:"festivo, alegre y de celebracion",                    open:"[playful]",          close:"[excited]" },
+  promocion:    { label:"Promoción",    desc:"persuasivo y orgulloso, de promocion",                open:"[excited]",          close:"[proud]" },
+  institucional:{ label:"Institucional",desc:"calmado, institucional y profesional",                open:"[calm]",             close:"" }
 };
 // El cliente escribe NORMAL. Esto reparte las marcas como lo hace Muse:
 // [open] al inicio, [pause] entre cada frase, y [close] en la frase final.
@@ -358,7 +361,7 @@ async function doGenerate(){
   hide(m);
   try{
     const r=await fetch(API+"/tts",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({token:TOKEN,text:text,tone:toneKey,voice_id:voiceId,model:"eleven_v4",voice_settings:VS})});
+      body:JSON.stringify({token:TOKEN,text:text,tone:toneKey,toneDesc:(TONES[toneKey]&&TONES[toneKey].desc)||"",voice_id:voiceId,model:"eleven_v4",voice_settings:VS})});
     if(r.status===402){ const d=await r.json(); setBal(d.available||0); show(m,"No te alcanzan los anuncios (este cuesta "+d.needed+", tienes "+d.available+"). Compra un paquete para continuar.","warn"); return; }
     if(r.status===401){ show(m,"Sesión inválida. Entra de nuevo.","err"); return; }
     if(!r.ok){ show(m,"No se pudo generar ("+r.status+"). Intenta de nuevo.","err"); return; }
