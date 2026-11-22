@@ -446,6 +446,19 @@ function encodeMP3(buffer){
   const end=enc.flush(); if(end.length) data.push(new Uint8Array(end));
   return new Blob(data,{type:'audio/mpeg'});
 }
+// Detecta el inicio/fin reales de la música (ignora el silencio de los bordes)
+// para que el loop sea continuo, sin pausas en cada vuelta.
+function musicBounds(buf){
+  const data=buf.getChannelData(0);
+  const n=data.length, sr=buf.sampleRate, thr=0.006;
+  let s=0, e=n-1;
+  while(s<n && Math.abs(data[s])<thr) s++;
+  while(e>s && Math.abs(data[e])<thr) e--;
+  if(e<=s){ s=0; e=n-1; }                 // si todo parece silencio, usa todo
+  const pad=Math.floor(sr*0.015);          // margen mínimo para no cortar ataques
+  s=Math.max(0, s-pad); e=Math.min(n-1, e+pad);
+  return { start: s/sr, end: (e+1)/sr };
+}
 async function mixVoiceWithMusic(voiceArr, jingleArr, level){
   const AC=window.AudioContext||window.webkitAudioContext;
   const dec=new AC();
@@ -457,14 +470,17 @@ async function mixVoiceWithMusic(voiceArr, jingleArr, level){
   const ctx=new OAC(2, Math.ceil(sr*dur), sr);
   const vSrc=ctx.createBufferSource(); vSrc.buffer=voice;
   vSrc.connect(ctx.destination); vSrc.start(0);
-  const mSrc=ctx.createBufferSource(); mSrc.buffer=music; mSrc.loop=true;
+  const mSrc=ctx.createBufferSource(); mSrc.buffer=music;
+  const mb=musicBounds(music);              // loop continuo sobre la parte con música
+  mSrc.loop=true; mSrc.loopStart=mb.start; mSrc.loopEnd=mb.end;
   const mGain=ctx.createGain();
   const lv=Math.max(0.02, Math.min(0.8, level||0.2));
   mGain.gain.setValueAtTime(0.0001, 0);
   mGain.gain.linearRampToValueAtTime(lv, 0.5);
   mGain.gain.setValueAtTime(lv, Math.max(0.6, dur-2));
   mGain.gain.linearRampToValueAtTime(0.0001, dur);
-  mSrc.connect(mGain).connect(ctx.destination); mSrc.start(0); mSrc.stop(dur);
+  mSrc.connect(mGain).connect(ctx.destination);
+  mSrc.start(0, mb.start); mSrc.stop(dur);   // empieza en la parte con música
   const rendered=await ctx.startRendering();
   return encodeMP3(rendered);
 }
