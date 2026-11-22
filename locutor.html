@@ -168,22 +168,33 @@ const VOICES = [
   { id:"HNIpMlHudYj9dX9ZYSGZ", name:"Sam", tag:"Versátil", desc:"Masculino versátil. Para todo tipo de anuncios." },
   { id:"yrsDrziGZnWsTlefm9Gi", name:"Nemesiel", tag:"Dinámico", desc:"Masculino dinámico. Ideal para eventos y promociones." }
 ];
-// Modelo Eleven v4: la emoción la dan las MARCAS dentro del texto, no las perillas.
-// Ajuste fijo (estabilidad 0.40 = expresivo pero conserva el acento boricua).
-const VS = { stability:0.40, similarity_boost:0.90, style:0.0, use_speaker_boost:true };
+// Modelo Eleven v4, receta exacta de Muse: estabilidad 0.40 + similarity 0.75,
+// sin tocar ningun otro ajuste. La emocion la dan las MARCAS dentro del texto.
+const VS = { stability:0.40, similarity_boost:0.75 };
+// open = marca de apertura ; close = marca que se re-inyecta en la frase de cierre.
 const TONES = {
-  energico:     { label:"Enérgico",     tag:"[excited]" },
-  urgente:      { label:"Urgente",      tag:"[excited] [rushed]" },
-  calido:       { label:"Cálido",       tag:"[softly] [warm]" },
-  serio:        { label:"Serio",        tag:"[serious]" },
-  festivo:      { label:"Festivo",      tag:"[playful]" },
-  promocion:    { label:"Promoción",    tag:"[proud]" },
-  institucional:{ label:"Institucional",tag:"[calm]" }
+  energico:     { label:"Enérgico",     open:"[excited]",          close:"[excited]" },
+  urgente:      { label:"Urgente",      open:"[excited] [rushed]", close:"[excited]" },
+  calido:       { label:"Cálido",       open:"[warmly]",           close:"" },
+  serio:        { label:"Serio",        open:"[serious]",          close:"" },
+  festivo:      { label:"Festivo",      open:"[playful]",          close:"[excited]" },
+  promocion:    { label:"Promoción",    open:"[excited]",          close:"[proud]" },
+  institucional:{ label:"Institucional",open:"[calm]",             close:"" }
 };
-// Mete la marca de emoción al inicio del texto (el cliente escribe normal).
+// El cliente escribe NORMAL. Esto reparte las marcas como lo hace Muse:
+// [open] al inicio, [pause] entre cada frase, y [close] en la frase final.
 function withTone(text, key){
-  const t = (TONES[key] && TONES[key].tag) ? TONES[key].tag + " " : "";
-  return t + text;
+  const tone = TONES[key] || {};
+  const open  = tone.open  || "";
+  const close = tone.close || "";
+  let parts = (text || "").replace(/\s+/g," ").trim().split(/(?<=[.!?…])\s+/).filter(Boolean);
+  if(parts.length === 0) return (open ? open + " " : "") + (text || "").trim();
+  const pieces = parts.map((p,i)=>{
+    if(i === 0 && open) return open + " " + p;
+    if(i === parts.length-1 && close) return close + " " + p;
+    return p;
+  });
+  return pieces.join(" [pause] ");
 }
 const BLOCK = [
   "reggaeton","reguetón","regueton","perreo",
