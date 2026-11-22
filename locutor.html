@@ -499,11 +499,9 @@ function stripSilence(ctx, buf){
   }
   return out;
 }
-// Voces que se escuchan más bajo y hay que emparejarles el volumen.
-const VOICE_BOOST = { "jzmAudEi0DeODCFmt4mt": true };  // Leo (Serio)
-// Sube el volumen de una voz baja con compresión + normalización (sin clipear).
+// Nivela TODAS las voces a un volumen alto y parejo (radio-ready): compresión
+// + normalización de pico a 0.97, sin clipear. El volumen final lo baja el equipo.
 async function processVoice(voiceArr, voiceId){
-  if(!VOICE_BOOST[voiceId]) return new Blob([voiceArr], { type:"audio/mpeg" });
   try{
     const AC=window.AudioContext||window.webkitAudioContext;
     const dec=new AC(); const vb=await dec.decodeAudioData(voiceArr.slice(0)); try{ dec.close(); }catch(e){}
