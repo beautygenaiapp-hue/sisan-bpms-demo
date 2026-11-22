@@ -123,6 +123,21 @@
       <div class="counter" id="counter">0 caracteres · 1 anuncio</div>
       <div class="msg err" id="filterMsg"></div>
     </div>
+    <div class="card" id="musicCard">
+      <h2>4 · Música de fondo (opcional)</h2>
+      <div class="tones" id="musicModes">
+        <div class="tone sel" data-mm="none">Sin música</div>
+        <div class="tone" data-mm="jingle">Subir mi jingle</div>
+      </div>
+      <div id="jingleBox" class="hidden" style="margin-top:14px">
+        <label>Tu archivo de música (MP3)</label>
+        <input type="file" id="jingleInput" accept="audio/*" style="padding:9px">
+        <label style="margin-top:6px">Volumen de la música: <span id="mlvl">20%</span></label>
+        <input type="range" id="mrange" min="5" max="60" value="20">
+        <label style="display:inline-flex;align-items:center;gap:7px;margin-top:4px"><input type="checkbox" id="jrights" style="width:auto;margin:0"> Confirmo que tengo los derechos de este audio.</label>
+        <div class="foot" style="margin-top:8px">Tu archivo se mezcla aquí mismo, en tu navegador. No se sube a ningún servidor.</div>
+      </div>
+    </div>
     <div class="card">
       <div class="gen-row">
         <button id="btnGen">Generar anuncio</button>
@@ -155,6 +170,7 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
 <script>
 const API = "https://bpms-voice.beautygenaiapp.workers.dev";
 
@@ -219,6 +235,7 @@ function findBad(text){
 }
 
 let TOKEN="", voiceId=VOICES[0].id, toneKey="energico", BAL=0;
+let musicMode="none", jingleFile=null, musicLevel=0.20;
 
 function show(el,t,cls){ el.textContent=t; el.className="msg show "+cls; }
 function hide(el){ el.className="msg"; }
@@ -330,6 +347,10 @@ async function doGenerate(){
   const bad=findBad(text);
   if(bad){ show(document.getElementById("filterMsg"),"El texto contiene contenido no permitido. Quita las palabras inapropiadas y vuelve a intentar.","err"); return; }
   hide(document.getElementById("filterMsg"));
+  if(musicMode==='jingle'){
+    if(!jingleFile){ show(m,"Escogiste “Subir mi jingle” pero no has elegido el archivo. Súbelo o escoge “Sin música”.","err"); return; }
+    if(!document.getElementById('jrights').checked){ show(m,"Marca la casilla de que tienes los derechos del jingle para continuar.","err"); return; }
+  }
 
   const btn=document.getElementById("btnGen");
   btn.disabled=true; if(rr) rr.disabled=true;
@@ -346,7 +367,20 @@ async function doGenerate(){
     const regen=r.headers.get("X-Ads-Regen");
     if(remaining!=null) setBal(parseInt(remaining,10));
     const buf=await r.arrayBuffer();
-    const url=URL.createObjectURL(new Blob([buf],{type:"audio/mpeg"}));
+    let finalBlob=new Blob([buf],{type:"audio/mpeg"});
+    let musicNote="";
+    if(musicMode==='jingle' && jingleFile){
+      try{
+        btn.innerHTML='<span class="spin"></span>Mezclando música…';
+        const jbuf=await jingleFile.arrayBuffer();
+        finalBlob=await mixVoiceWithMusic(buf, jbuf, musicLevel);
+        musicNote=" Con tu música de fondo.";
+      }catch(err){
+        finalBlob=new Blob([buf],{type:"audio/mpeg"});
+        musicNote=" (No pude mezclar ese archivo — te di la voz sola. Prueba con un MP3.)";
+      }
+    }
+    const url=URL.createObjectURL(finalBlob);
     document.getElementById("player").src=url;
     document.getElementById("dl").href=url;
     document.getElementById("result").classList.add("show");
@@ -357,6 +391,7 @@ async function doGenerate(){
       else { rr.classList.add("hidden"); note.textContent="Sin tomas gratis extra de este texto. Cambia algo del texto para empezar de nuevo."; }
     }
     let okMsg = charged>0 ? ("¡Anuncio generado! Se descontó "+charged+" anuncio"+(charged===1?"":"s")+". Escúchalo — si no te convence, dale “Otra toma”.") : "¡Otra toma lista, gratis! Escoge la que más te guste.";
+    okMsg += musicNote;
     show(m, okMsg, "ok");
     document.getElementById("player").play().catch(()=>{});
   }catch(e){
@@ -385,6 +420,55 @@ document.querySelectorAll(".plan").forEach(b=>{
 document.getElementById("logout").onclick=(e)=>{ e.preventDefault(); try{localStorage.removeItem("bpms_tok");}catch(e){} location.reload(); };
 
 renderVoices(); renderTones();
+
+// --- Música de fondo (mezcla en el navegador; no sube nada al servidor) ---
+document.querySelectorAll('#musicModes .tone').forEach(el=>{
+  el.onclick=()=>{
+    musicMode=el.dataset.mm;
+    document.querySelectorAll('#musicModes .tone').forEach(x=>x.classList.toggle('sel', x===el));
+    document.getElementById('jingleBox').classList.toggle('hidden', musicMode!=='jingle');
+  };
+});
+document.getElementById('jingleInput').addEventListener('change',e=>{ jingleFile=(e.target.files&&e.target.files[0])||null; });
+(function(){ const mr=document.getElementById('mrange'); mr.addEventListener('input',()=>{ musicLevel=mr.value/100; document.getElementById('mlvl').textContent=mr.value+'%'; }); })();
+
+function floatTo16(f){ const o=new Int16Array(f.length); for(let i=0;i<f.length;i++){ let s=Math.max(-1,Math.min(1,f[i])); o[i]= s<0 ? s*0x8000 : s*0x7FFF; } return o; }
+function encodeMP3(buffer){
+  const left=buffer.getChannelData(0);
+  const right=buffer.numberOfChannels>1?buffer.getChannelData(1):left;
+  const l16=floatTo16(left), r16=floatTo16(right);
+  const enc=new lamejs.Mp3Encoder(2, buffer.sampleRate, 128);
+  const block=1152, data=[];
+  for(let i=0;i<l16.length;i+=block){
+    const mp3=enc.encodeBuffer(l16.subarray(i,i+block), r16.subarray(i,i+block));
+    if(mp3.length) data.push(new Uint8Array(mp3));
+  }
+  const end=enc.flush(); if(end.length) data.push(new Uint8Array(end));
+  return new Blob(data,{type:'audio/mpeg'});
+}
+async function mixVoiceWithMusic(voiceArr, jingleArr, level){
+  const AC=window.AudioContext||window.webkitAudioContext;
+  const dec=new AC();
+  const voice=await dec.decodeAudioData(voiceArr.slice(0));
+  const music=await dec.decodeAudioData(jingleArr.slice(0));
+  try{ dec.close(); }catch(e){}
+  const sr=44100, tail=1.5, dur=voice.duration+tail;
+  const OAC=window.OfflineAudioContext||window.webkitOfflineAudioContext;
+  const ctx=new OAC(2, Math.ceil(sr*dur), sr);
+  const vSrc=ctx.createBufferSource(); vSrc.buffer=voice;
+  vSrc.connect(ctx.destination); vSrc.start(0);
+  const mSrc=ctx.createBufferSource(); mSrc.buffer=music; mSrc.loop=true;
+  const mGain=ctx.createGain();
+  const lv=Math.max(0.02, Math.min(0.8, level||0.2));
+  mGain.gain.setValueAtTime(0.0001, 0);
+  mGain.gain.linearRampToValueAtTime(lv, 0.5);
+  mGain.gain.setValueAtTime(lv, Math.max(0.6, dur-2));
+  mGain.gain.linearRampToValueAtTime(0.0001, dur);
+  mSrc.connect(mGain).connect(ctx.destination); mSrc.start(0); mSrc.stop(dur);
+  const rendered=await ctx.startRendering();
+  return encodeMP3(rendered);
+}
+
 // auto-sesión: 1) token en el link (?t=...)  2) token guardado
 (async function(){
   let t=null;
