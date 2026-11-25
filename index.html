@@ -563,7 +563,22 @@
 
   function setSource(s){ source=s; $$('#srcSeg button').forEach(function(x){x.setAttribute('aria-selected',x.dataset.src===s?'true':'false')}); $('#src-lib').hidden=s!=='lib'; $('#src-mine').hidden=s!=='mine'; qi=0; buildQueue(); if(playing)playItem(); }
   $('#srcSeg').addEventListener('click',function(e){ var b=e.target.closest('button[data-src]'); if(b)setSource(b.dataset.src); });
-  $('#amb').addEventListener('click',function(e){ var b=e.target.closest('button[data-g]'); if(!b)return; $$('#amb button').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')}); var g=b.dataset.g; libMix=(g==='variada')?'variada':(g+':100'); qi=0; buildQueue(); if(playing)playItem(); });
+  $('#amb').addEventListener('click',function(e){ var b=e.target.closest('button[data-g]'); if(!b)return; $$('#amb button').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')}); var g=b.dataset.g; libMix=(g==='variada')?'variada':(g+':100'); qi=0; buildQueue(); if(playing)playItem(); saveMusicMix(); });
+  function acctTok(){ try{ return localStorage.getItem('bpms_tok')||''; }catch(e){ return ''; } }
+  function saveMusicMix(){ var t=acctTok(); if(!t)return; try{ fetch(API+'/music/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t,mix:libMix})}); }catch(e){} }
+  function applyLibMix(){ var g=(libMix==='variada')?'variada':libMix.split(':')[0]; $$('#amb button').forEach(function(x){ x.setAttribute('aria-pressed', x.dataset.g===g?'true':'false'); }); }
+  async function loadAccount(){
+    var t=acctTok(); if(!t) return;
+    try{ var mr=await fetch(API+'/music/get',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})}); var md=await mr.json(); if(md&&md.ok&&md.mix){ libMix=md.mix; applyLibMix(); } }catch(e){}
+    try{
+      var r=await fetch(API+'/ad/list',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})});
+      var d=await r.json();
+      if(d&&d.ok&&Array.isArray(d.ads)){
+        ads = d.ads.map(function(a){ return { id:(a.id||nid()), type:'audio', name:a.name||'Anuncio', url: API+a.url, on:true, sch:a.schedule||null, acct:true }; });
+        renderAds(); buildQueue();
+      }
+    }catch(e){}
+  }
 
   $('#file').addEventListener('change',function(e){ Array.prototype.forEach.call(e.target.files,function(f){ if(/audio/.test(f.type))uploaded.push({id:nid(),name:f.name,url:URL.createObjectURL(f),on:true}); }); renderUploads(); if(uploaded.length)setSource('mine'); });
   function renderUploads(){ var w=$('#uplist'); w.innerHTML=''; if(!uploaded.length){ w.innerHTML='<div class="empty">Sube tus MP3 👆 y entran en la rotación.</div>'; refreshBulk('music'); return; }
@@ -653,7 +668,7 @@
     // grupo de ejemplo: anuncio de temporada programado para Navidad (todos a la vez)
     groups.push({id:nid(),name:'Especiales de Navidad',kind:'ad',members:[ads[2].id],mode:'shared',sch:{start:'2026-12-01',end:'2026-12-24',from:'',to:'',days:daysAll(),every:2}});
   })();
-  wireBulk('music'); wireBulk('ad'); renderUploads(); renderAds(); renderSch(); renderGroups(); setSource('lib');
+  wireBulk('music'); wireBulk('ad'); renderUploads(); renderAds(); renderSch(); renderGroups(); setSource('lib'); loadAccount();
   // seguridad: pausar/parar el audio si el panel se oculta o se cierra (evita que siga sonando)
   try{
     document.addEventListener('visibilitychange', function(){ if(document.hidden && playing) pausePlay(); });
