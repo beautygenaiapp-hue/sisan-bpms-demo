@@ -18,7 +18,7 @@
     --ok:#46cf82;                                 /* estado / nivel */
     color-scheme:dark;
   }
-  *{box-sizing:border-box} [hidden]{display:none!important} html,body{margin:0}
+  *{box-sizing:border-box} html,body{margin:0}
   body{background:var(--bg); color:var(--ink); font-family:"Barlow",-apple-system,"Segoe UI",sans-serif; font-size:15px; line-height:1.45; -webkit-font-smoothing:antialiased}
   h1,h2,h3,.disp{font-family:"Barlow Semi Condensed","Barlow",sans-serif; letter-spacing:-.01em}
   .mono{font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums}
@@ -226,7 +226,7 @@
       <span class="plan">Plan $39.99/mes</span>
     </div>
 
-    <div class="infobar"><span>🎧</span><span>Demostración con contenido real ya cargado: <b>15 canciones del repertorio Sisan</b> (clips de 30s) y <b>4 anuncios</b>, programados. Dale <b>play</b> y escucha cómo se alternan música y anuncios en tiempo real. En Programación verás un grupo de temporada de ejemplo.</span></div>
+    <div class="infobar"><span>🎧</span><span><b>Todo el repertorio Sisan</b> transmite desde la nube. Escoge el estilo (Variada por defecto), dale <b>play</b> y escucha cómo se alternan música y anuncios en tiempo real. Sube tus propios anuncios y música cuando quieras.</span></div>
 
     <!-- DECK -->
     <div class="panel deck playing" id="deck">
@@ -276,18 +276,25 @@
         <label class="drop" for="file"><b>⬆ Sube tu música (MP3)</b> — arrastra o toca</label>
         <input id="file" type="file" accept="audio/*" multiple hidden>
         <div class="seg" id="srcSeg" role="tablist" style="margin-top:12px">
-          <button role="tab" aria-selected="false" data-src="lib">Librería Sisan</button>
-          <button role="tab" aria-selected="true" data-src="mine">Mi música</button>
+          <button role="tab" aria-selected="true" data-src="lib">Librería Sisan</button>
+          <button role="tab" aria-selected="false" data-src="mine">Mi música</button>
         </div>
-        <div id="src-lib" hidden style="margin-top:12px">
+        <div id="src-lib" style="margin-top:12px">
+          <p class="sub" style="margin:0 0 10px">Escoge el estilo de tu tienda. <b>Variada</b> mezcla todo el repertorio balanceado; o escoge un género.</p>
           <div class="amb" id="amb">
-            <button aria-pressed="true" data-amb="variada"><b>Variada</b><span>Mezcla para vender</span></button>
-            <button aria-pressed="false" data-amb="retail"><b>Retail</b><span>Energía</span></button>
-            <button aria-pressed="false" data-amb="restaurante"><b>Restaurante</b><span>Ambiente</span></button>
-            <button aria-pressed="false" data-amb="pico"><b>Hora pico</b><span>Ritmo alto</span></button>
+            <button aria-pressed="true" data-g="variada"><b>Variada</b><span>De todo, balanceado</span></button>
+            <button aria-pressed="false" data-g="Salsa"><b>Salsa</b><span>Clásica y moderna</span></button>
+            <button aria-pressed="false" data-g="Bachata"><b>Bachata</b><span>Romántica</span></button>
+            <button aria-pressed="false" data-g="Merengue"><b>Merengue</b><span>Para mover</span></button>
+            <button aria-pressed="false" data-g="Pop Latino"><b>Pop Latino</b><span>Éxitos en español</span></button>
+            <button aria-pressed="false" data-g="Pop/Rock (Inglés)"><b>Pop/Rock Inglés</b><span>Éxitos en inglés</span></button>
+            <button aria-pressed="false" data-g="Balada"><b>Baladas</b><span>Suave</span></button>
+            <button aria-pressed="false" data-g="Dance/Electrónica"><b>Dance</b><span>Electrónica</span></button>
+            <button aria-pressed="false" data-g="Navidad"><b>Navidad</b><span>Temporada</span></button>
+            <button aria-pressed="false" data-g="Semana Santa"><b>Semana Santa</b><span>Temporada</span></button>
           </div>
         </div>
-        <div id="src-mine" style="margin-top:12px">
+        <div id="src-mine" hidden style="margin-top:12px">
           <div class="bulkbar" id="bulkMus" hidden><button type="button" class="lnk" id="musSelAll">Seleccionar todas</button><span class="cnt" id="musCnt">0 seleccionadas</span><span class="bspacer"></span><button class="btn primary sm" id="musSchedBtn" disabled>📅 Programar juntas</button></div>
           <div class="bulkedit" id="musBulkEdit" hidden></div>
           <div class="list" id="uplist"></div>
@@ -382,7 +389,9 @@
   $('#subtabs').addEventListener('click',function(e){ var b=e.target.closest('button[data-tab]'); if(!b)return; $$('#subtabs button').forEach(function(x){x.setAttribute('aria-selected',x===b?'true':'false')}); ['musica','anuncios','prog'].forEach(function(t){$('#tab-'+t).hidden=(t!==b.dataset.tab)}); if(b.dataset.tab==='prog')renderProg(); });
 
   /* ===== estado ===== */
-  var playing=false, source='mine', ambiente='variada';
+  var API="https://bpms-voice.beautygenaiapp.workers.dev";
+  var playing=false, source='lib', ambiente='variada', libMix='variada';
+  var playToken=0;
   var uploaded=[], ads=[];           // uploaded:{name,url,on}  ads:{type,name?,url?,text?,on}
   var musicEl=new Audio(), adEl=new Audio(); try{musicEl.setAttribute('playsinline','');adEl.setAttribute('playsinline','');musicEl.preload='auto';}catch(e){}
   function stopAllAudio(){ try{musicEl.pause();}catch(e){} try{adEl.pause();}catch(e){} try{if(window.speechSynthesis)speechSynthesis.cancel();}catch(e){} }
@@ -462,7 +471,7 @@
     if(btn) btn.onclick=function(){ if(edBox && !edBox.hidden){ edBox.hidden=true; return; } var tmp={sch:newSch()}; edBox.innerHTML='<label class="fl" style="margin-bottom:6px">Fecha / días / hora'+(isAd?' / frecuencia':'')+' para los seleccionados</label>'; var holder=document.createElement('div'); edBox.appendChild(holder); attachSched(holder,tmp,isAd,null); var apply=document.createElement('button'); apply.type='button'; apply.className='btn primary sm'; apply.style.marginTop='10px'; apply.textContent='✓ Aplicar a '+selIds(kind).length+' seleccionado(s)'; apply.onclick=function(){ var items=isAd?ads:uploaded; items.forEach(function(it){ if(sel[kind][it.id]) it.sch = tmp.sch?JSON.parse(JSON.stringify(tmp.sch)):null; }); edBox.hidden=true; sel[kind]={}; reRender(); buildQueue(); }; edBox.appendChild(apply); edBox.hidden=false; }; }
 
   function onTracks(){ return uploaded.filter(function(u){return u.on!==false;}); }
-  function songsPool(){ if(source==='mine'){ return onTracks().filter(function(u){return activeNow(u,'music');}).map(function(u){return {kind:'song',name:(u.name||'').replace(/\.[^.]+$/,''),by:'Tu música',url:u.url,__item:u};}); } return CATALOG[ambiente].map(function(s){return {kind:'song',name:s[0],by:s[1]};}); }
+  function songsPool(){ if(source==='mine'){ return onTracks().filter(function(u){return activeNow(u,'music');}).map(function(u){return {kind:'song',name:(u.name||'').replace(/\.[^.]+$/,''),by:'Tu música',url:u.url,__item:u};}); } var slots=[]; for(var i=0;i<12;i++){ slots.push({kind:'song',lib:true,name:'Librería Sisan',by:'Librería Sisan'}); } return slots; }
   function adName(a){ return a.type==='audio'?a.name:(a.type==='text'?a.text.slice(0,30):(a.name||'Anuncio')); }
   function adsPool(){ return ads.filter(function(a){return a.on!==false && activeNow(a,'ad');}); }
   function buildQueue(){ var songs=songsPool(), ap=adsPool(), q=[], ai=0;
@@ -494,8 +503,8 @@
     $('#title').textContent=it.name||(isAd?'Anuncio':'Canción');
     $('#sub').textContent = isAd
       ? (it.ad&&it.ad.type==='audio' ? 'Tu anuncio' : 'Locutor AI · voz')
-      : (it.url ? (it.by||'Tu música') : (it.by? it.by+' · Librería (vista previa)' : 'Librería (vista previa)'));
-    $('#nosnd').hidden = true;
+      : (it.lib ? 'Librería Sisan' : (it.url ? (it.by||'Tu música') : (it.by? it.by+' · Librería (vista previa)' : 'Librería (vista previa)')));
+    $('#nosnd').hidden = isAd ? true : (it.lib ? true : !!it.url);
   }
 
   function playItem(){
@@ -505,6 +514,16 @@
     cur.kind=it.kind; cur.isAudio=false; cur.el=null; cur.acc=0; cur.startAt=Date.now();
     stopAllAudio();
     if(it.kind==='song'){
+      if(it.lib){
+        stopBed(); var tok=++playToken; cur.total=DEMO_SONG; $('#title').textContent='Librería Sisan'; $('#sub').textContent='Buscando la próxima canción…';
+        fetch(API+'/pista?mix='+encodeURIComponent(libMix)).then(function(r){return r.json();}).then(function(d){
+          if(tok!==playToken||!playing)return;
+          if(d&&d.id){ it.name=d.t||'Canción'; it.id=d.id; it.by='Librería Sisan'; showDeck(it); renderRows();
+            cur.isAudio=true; cur.el=musicEl; musicEl.src=API+'/audio/'+encodeURIComponent(d.id); musicEl.volume=vol; musicEl.onended=advance; musicEl.onerror=function(){ if(tok===playToken)advance(); }; musicEl.play().catch(function(){}); }
+          else { advance(); }
+        }).catch(function(){ if(tok===playToken)advance(); });
+        return;
+      }
       if(it.url){ stopBed(); cur.isAudio=true; cur.el=musicEl; musicEl.src=it.url; musicEl.volume=vol; musicEl.onended=advance; musicEl.onerror=advance; musicEl.play().catch(function(){}); }
       else { cur.total=DEMO_SONG; }
     } else {
@@ -528,7 +547,7 @@
   }
 
   function startPlay(){ if(!queue.length)buildQueue(); if(!queue.length){ renderRows(); $('#deck').classList.remove('playing'); $('#title').textContent='Sube tu música para empezar'; $('#sub').textContent='Música ▸ Sube tu música (MP3)'; $('#nosnd').hidden=false; return; } playing=true; $('#deck').classList.add('playing'); $('#play').textContent='⏸'; $('#onair').classList.add('on'); $('#onair').innerHTML='<span class="lamp"></span> AL AIRE'; if(qi<0)qi=0; playItem(); if(!raf)raf=requestAnimationFrame(loop); }
-  function pausePlay(){ cur.acc=elapsed(); playing=false; $('#deck').classList.remove('playing'); $('#play').textContent='▶'; $('#onair').classList.remove('on'); $('#onair').innerHTML='<span class="lamp"></span> EN ESPERA'; stopBed(); stopAllAudio(); if(raf){cancelAnimationFrame(raf);raf=null;} }
+  function pausePlay(){ playToken++; cur.acc=elapsed(); playing=false; $('#deck').classList.remove('playing'); $('#play').textContent='▶'; $('#onair').classList.remove('on'); $('#onair').innerHTML='<span class="lamp"></span> EN ESPERA'; stopBed(); stopAllAudio(); if(raf){cancelAnimationFrame(raf);raf=null;} }
   $('#play').addEventListener('click',function(){ playing?pausePlay():startPlay(); });
   $('#next').addEventListener('click',function(){ if(!playing){startPlay();return;} advance(); });
   $('#prev').addEventListener('click',function(){ qi=Math.max(0,qi-1); if(playing)playItem(); else renderRows(); });
@@ -537,7 +556,7 @@
 
   function setSource(s){ source=s; $$('#srcSeg button').forEach(function(x){x.setAttribute('aria-selected',x.dataset.src===s?'true':'false')}); $('#src-lib').hidden=s!=='lib'; $('#src-mine').hidden=s!=='mine'; qi=0; buildQueue(); if(playing)playItem(); }
   $('#srcSeg').addEventListener('click',function(e){ var b=e.target.closest('button[data-src]'); if(b)setSource(b.dataset.src); });
-  $('#amb').addEventListener('click',function(e){ var b=e.target.closest('button[data-amb]'); if(!b)return; $$('#amb button').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')}); ambiente=b.dataset.amb; qi=0; buildQueue(); });
+  $('#amb').addEventListener('click',function(e){ var b=e.target.closest('button[data-g]'); if(!b)return; $$('#amb button').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')}); var g=b.dataset.g; libMix=(g==='variada')?'variada':(g+':100'); qi=0; buildQueue(); if(playing)playItem(); });
 
   $('#file').addEventListener('change',function(e){ Array.prototype.forEach.call(e.target.files,function(f){ if(/audio/.test(f.type))uploaded.push({id:nid(),name:f.name,url:URL.createObjectURL(f),on:true}); }); renderUploads(); if(uploaded.length)setSource('mine'); });
   function renderUploads(){ var w=$('#uplist'); w.innerHTML=''; if(!uploaded.length){ w.innerHTML='<div class="empty">Sube tus MP3 👆 y entran en la rotación.</div>'; refreshBulk('music'); return; }
@@ -615,31 +634,19 @@
 
   /* ===== CONTENIDO PRECARGADO (demostración para socios) ===== */
   (function(){
-    var SONGS=[
-      ['s01','Liar — Camila Cabello'],['s02','My Oh My — Camila Cabello'],['s03','Never Be the Same — Camila Cabello'],
-      ['s04','Vida de Rico — Camilo'],['s05','Caminando por la Vida — Melendi'],
-      ['s06','Colgando en tus Manos — Carlos Baute & Marta Sánchez'],['s07','Ando Buscando — Carlos Baute & Piso 21'],
-      ['s08','Regrésame mi Corazón — Carlos Rivera'],['s09','Alguien me Espera en Madrid — Carlos Rivera & Carin León'],
-      ['s10','Cuando nos Volvamos a Encontrar — Carlos Vives & Marc Anthony'],['s11','Cumbiana — Carlos Vives'],
-      ['s12','No te Vayas — Carlos Vives'],['s13','Rapsodia en La Mayor — Carlos Vives & Rodrigo Tenjo'],
-      ['s14','La Bicicleta — Carlos Vives & Shakira'],['s15','Carlos Vives & Sebastián Yatra']
-    ];
-    SONGS.forEach(function(s){ uploaded.push({id:nid(),name:s[1],url:'audio/'+s[0]+'.mp3',on:true}); });
     function daysAll(){ return {mon:1,tue:1,wed:1,thu:1,fri:1,sat:1,sun:1}; }
-    // una cancion programada para diciembre (muestra el estado "Programado")
-    uploaded[10].sch={start:'2026-12-01',end:'2026-12-31',from:'',to:'',days:daysAll(),every:1};
     function adSch(ev){ return {start:'',end:'',from:'',to:'',days:daysAll(),every:ev}; }
+    // Anuncios de demostración (voz del navegador). El cliente sube los suyos en MP3.
     var ADS=[
-      ['a1','Coca-Cola · Powerade · Smartwater',adSch(1)],
-      ['a2','Carmela · Arroz El Mago',adSch(1)],
-      ['a3','Coca-Cola · Medalla',adSch(1)],
-      ['a4','Sprite · Medalla',null]
+      ['a1','En Supermercados Econo, los precios más bajos de Puerto Rico. ¡Visítanos hoy!',adSch(3)],
+      ['a2','Aprovecha las ofertas de la semana. Carmela y Arroz El Mago, siempre frescos.',adSch(3)],
+      ['a3','Gracias por comprar con nosotros. Tu tienda de confianza.',adSch(4)]
     ];
-    ADS.forEach(function(a){ var o={id:nid(),type:'audio',name:a[1],url:'audio/'+a[0]+'.mp3',on:true}; if(a[2])o.sch=a[2]; ads.push(o); });
+    ADS.forEach(function(a){ ads.push({id:nid(),type:'text',text:a[1],name:a[1],on:true,sch:a[2]}); });
     // grupo de ejemplo: anuncio de temporada programado para Navidad (todos a la vez)
-    groups.push({id:nid(),name:'Especiales de Navidad',kind:'ad',members:[ads[3].id],mode:'shared',sch:{start:'2026-12-01',end:'2026-12-24',from:'',to:'',days:daysAll(),every:2}});
+    groups.push({id:nid(),name:'Especiales de Navidad',kind:'ad',members:[ads[2].id],mode:'shared',sch:{start:'2026-12-01',end:'2026-12-24',from:'',to:'',days:daysAll(),every:2}});
   })();
-  wireBulk('music'); wireBulk('ad'); renderUploads(); renderAds(); buildQueue(); renderSch(); renderGroups();
+  wireBulk('music'); wireBulk('ad'); renderUploads(); renderAds(); renderSch(); renderGroups(); setSource('lib');
   // seguridad: pausar/parar el audio si el panel se oculta o se cierra (evita que siga sonando)
   try{
     document.addEventListener('visibilitychange', function(){ if(document.hidden && playing) pausePlay(); });
