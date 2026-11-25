@@ -228,7 +228,7 @@
 
     <!-- ACCIÓN: crear anuncio (siempre visible, alto en la página) -->
     <div class="panel" style="padding:14px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <span style="flex:1 1 200px;font-size:13.5px;color:var(--ink-2)">🎙️ <b style="color:var(--ink)">¿Anuncios?</b> Créalos con locutor AI o sube tu propio MP3.</span>
+      <span style="flex:1 1 200px;font-size:13.5px;color:var(--ink-2)">🎙️ <b style="color:var(--ink)">¿Anuncios?</b> Escoge tu locutor y crea tu anuncio, o sube tu propio MP3.</span>
       <a class="btn primary" href="generador.html" target="_blank" rel="noopener" style="flex:0 0 auto;white-space:nowrap;text-decoration:none">🎙️ Crear anuncio</a>
     </div>
 
@@ -333,8 +333,8 @@
     <div class="tabpanel" id="tab-anuncios" hidden>
       <div class="card">
         <h3>Tus anuncios</h3>
-        <p class="sub">Crea tu anuncio con locutor AI, o sube uno tuyo en MP3. Programa cada uno con ⏱: fechas, días, horas y frecuencia (cada N canciones).</p>
-        <a class="btn primary" href="generador.html" target="_blank" rel="noopener" style="display:flex;width:100%;justify-content:center;margin-bottom:12px;text-decoration:none">🎙️ Crear anuncio con locutor AI</a>
+        <p class="sub">Escoge tu locutor y crea tu anuncio, o sube uno tuyo en MP3. Programa cada uno con ⏱: fechas, días, horas y frecuencia (cada N canciones).</p>
+        <a class="btn primary" href="generador.html" target="_blank" rel="noopener" style="display:flex;width:100%;justify-content:center;margin-bottom:12px;text-decoration:none">🎙️ Crear anuncio</a>
         <label class="drop" for="adFile"><b>📢 …o sube tu anuncio (MP3)</b></label>
         <input id="adFile" type="file" accept="audio/*" multiple hidden>
         <div class="bulkbar" id="bulkAd" hidden style="margin-top:12px"><button type="button" class="lnk" id="adSelAll">Seleccionar todos</button><span class="cnt" id="adCnt">0 seleccionados</span><span class="bspacer"></span><button class="btn primary sm" id="adSchedBtn" disabled>📅 Programar juntos</button></div>
@@ -345,7 +345,7 @@
           <select id="voice" style="margin-top:8px"></select>
           <button class="btn ghost sm" id="genAd" style="margin-top:8px">Guardar</button>
         </details>
-        <p class="note" style="margin-top:10px">En real: locutor AI de ElevenLabs o tu locutor humano. Aquí tu MP3 suena de verdad.</p>
+        <p class="note" style="margin-top:10px">Escoge tu locutor y crea tu anuncio en segundos, o sube tu propio MP3 — suena de verdad en la rotación.</p>
       </div>
     </div>
   </section>
@@ -509,7 +509,7 @@
     $('#cover').textContent=isAd?'📢':'🎵';
     $('#title').textContent=it.name||(isAd?'Anuncio':'Canción');
     $('#sub').textContent = isAd
-      ? (it.ad&&it.ad.type==='audio' ? 'Tu anuncio' : 'Locutor AI · voz')
+      ? (it.ad&&it.ad.type==='audio' ? 'Tu anuncio' : 'Locutor · voz')
       : (it.lib ? 'Librería Sisan' : (it.url ? (it.by||'Tu música') : (it.by? it.by+' · Librería (vista previa)' : 'Librería (vista previa)')));
     $('#nosnd').hidden = isAd ? true : (it.lib ? true : !!it.url);
   }
