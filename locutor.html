@@ -150,6 +150,8 @@
         <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <button class="ghost hidden" id="btnReroll">🔄 Otra toma (gratis)</button>
           <a id="dl" download="anuncio.mp3"><button class="ghost">⬇ Descargar MP3</button></a>
+          <button class="ghost" id="saveAcct" onclick="saveToAccount(this)">💾 Guardar en mi cuenta</button>
+          <span id="saveMsg" style="font-size:13px"></span>
           <span class="foot" id="takeNote"></span>
         </div>
       </div>
@@ -386,6 +388,7 @@ async function doGenerate(){
       }
     }
     const url=URL.createObjectURL(finalBlob);
+    window.__lastAd=finalBlob;
     document.getElementById("player").src=url;
     document.getElementById("dl").href=url;
     document.getElementById("result").classList.add("show");
@@ -566,5 +569,26 @@ async function mixVoiceWithMusic(voiceArr, jingleArr, level){
   }
 })();
 </script>
+<script>
+async function saveToAccount(btn){
+  var msg=document.getElementById('saveMsg');
+  var blob=window.__lastAd;
+  if(!blob){ if(msg)msg.textContent='Primero crea el anuncio.'; return; }
+  var tok=''; try{ tok=localStorage.getItem('bpms_tok')||''; }catch(e){}
+  if(!tok){ if(msg)msg.textContent='Entra con tu cuenta para guardar.'; return; }
+  var old=btn.textContent; btn.disabled=true; btn.textContent='Guardando…'; if(msg)msg.textContent='';
+  try{
+    var buf=await blob.arrayBuffer(); var bytes=new Uint8Array(buf); var bin=''; var CH=0x8000;
+    for(var i=0;i<bytes.length;i+=CH){ bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+CH)); }
+    var b64=btoa(bin);
+    var name='Anuncio '+new Date().toLocaleDateString('es-PR');
+    var r=await fetch('https://bpms-voice.beautygenaiapp.workers.dev/ad/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:tok,name:name,audio_b64:b64})});
+    var d=await r.json().catch(function(){return {};});
+    if(r.ok&&d.ok){ btn.textContent='✓ Guardado en tu cuenta'; if(msg)msg.textContent='Ya aparece en tu consola.'; }
+    else { btn.textContent=old; btn.disabled=false; if(msg)msg.textContent=(d&&d.error)||'No se pudo guardar.'; }
+  }catch(e){ btn.textContent=old; btn.disabled=false; if(msg)msg.textContent='Error al guardar.'; }
+}
+</script>
 </body>
 </html>
+
