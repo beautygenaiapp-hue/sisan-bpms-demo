@@ -399,6 +399,8 @@
   var API="https://bpms-voice.beautygenaiapp.workers.dev";
   var playing=false, source='lib', ambiente='variada', libMix='variada';
   var playToken=0;
+  var libAhead=null;
+  function prefetchLib(){ try{ fetch(API+'/pista?mix='+encodeURIComponent(libMix)).then(function(r){return r.json();}).then(function(d){ if(d&&d.id) libAhead=d; }).catch(function(){}); }catch(e){} }
   var uploaded=[], ads=[];           // uploaded:{name,url,on}  ads:{type,name?,url?,text?,on}
   var musicEl=new Audio(), adEl=new Audio(); try{musicEl.setAttribute('playsinline','');adEl.setAttribute('playsinline','');musicEl.preload='auto';}catch(e){}
   function stopAllAudio(){ try{musicEl.pause();}catch(e){} try{adEl.pause();}catch(e){} try{if(window.speechSynthesis)speechSynthesis.cancel();}catch(e){} }
@@ -493,8 +495,8 @@
       var it=queue[i], isAd=it.kind==='ad', isCur=i===qi;
       var dur = isAd ? (it.ad&&it.ad.type==='audio'?'0:20':fmt(DEMO_AD)) : (it.url?'—':fmt(DEMO_SONG));
       var d=document.createElement('div'); d.className='row'+(isAd?' ad':'')+(isCur?' cur':'');
-      d.innerHTML='<span class="ic">'+(isAd?'📢':'🎵')+'</span><span class="g"><b></b><span>'+(isAd?'Anuncio':'Canción')+'</span></span>'+(isCur?'<span class="nowtag" id="rowtag">AL AIRE</span>':'<span class="dur mono">'+dur+'</span>');
-      d.querySelector('b').textContent=it.name||(isAd?'Anuncio':'Canción');
+      d.innerHTML='<span class="ic">'+(isAd?'📢':'🎵')+'</span><span class="g"><b></b><span>'+(isAd?'Anuncio':(isCur?'Sonando ahora':'En cola'))+'</span></span>'+(isCur?'<span class="nowtag" id="rowtag">AL AIRE</span>':'<span class="dur mono">'+dur+'</span>');
+      d.querySelector('b').textContent = isAd ? (it.name||'Anuncio') : 'Música';
       w.appendChild(d);
     })(i); }
   }
@@ -522,13 +524,16 @@
     stopAllAudio();
     if(it.kind==='song'){
       if(it.lib){
-        stopBed(); var tok=++playToken; cur.total=DEMO_SONG; $('#title').textContent='Librería Sisan'; $('#sub').textContent='Buscando la próxima canción…';
-        fetch(API+'/pista?mix='+encodeURIComponent(libMix)).then(function(r){return r.json();}).then(function(d){
-          if(tok!==playToken||!playing)return;
-          if(d&&d.id){ it.name=d.t||'Canción'; it.id=d.id; it.by='Librería Sisan'; showDeck(it); renderRows();
-            cur.isAudio=true; cur.el=musicEl; musicEl.src=API+'/audio/'+encodeURIComponent(d.id); musicEl.volume=vol; musicEl.onended=advance; musicEl.onerror=function(){ if(tok===playToken)advance(); }; musicEl.play().catch(function(){}); }
-          else { advance(); }
-        }).catch(function(){ if(tok===playToken)advance(); });
+        stopBed(); var tok=++playToken;
+        function playLib(d){ it.name=d.t||'Canción'; it.id=d.id; it.by='Librería Sisan'; showDeck(it); renderRows();
+          cur.isAudio=true; cur.el=musicEl; musicEl.src=API+'/audio/'+encodeURIComponent(d.id); musicEl.volume=vol; musicEl.onended=advance; musicEl.onerror=function(){ if(tok===playToken)advance(); }; musicEl.play().catch(function(){}); }
+        var pre=libAhead; libAhead=null; prefetchLib();
+        if(pre&&pre.id){ cur.isAudio=true; cur.el=musicEl; playLib(pre); }   // síncrono: conserva el gesto del play -> sí suena
+        else { cur.total=DEMO_SONG; $('#title').textContent='Librería Sisan'; $('#sub').textContent='Buscando la próxima canción…';
+          fetch(API+'/pista?mix='+encodeURIComponent(libMix)).then(function(r){return r.json();}).then(function(d){
+            if(tok!==playToken||!playing)return;
+            if(d&&d.id){ playLib(d); } else { advance(); }
+          }).catch(function(){ if(tok===playToken)advance(); }); }
         return;
       }
       if(it.url){ stopBed(); cur.isAudio=true; cur.el=musicEl; musicEl.src=it.url; musicEl.volume=vol; musicEl.onended=advance; musicEl.onerror=advance; musicEl.play().catch(function(){}); }
@@ -563,13 +568,15 @@
 
   function setSource(s){ source=s; $$('#srcSeg button').forEach(function(x){x.setAttribute('aria-selected',x.dataset.src===s?'true':'false')}); $('#src-lib').hidden=s!=='lib'; $('#src-mine').hidden=s!=='mine'; qi=0; buildQueue(); if(playing)playItem(); }
   $('#srcSeg').addEventListener('click',function(e){ var b=e.target.closest('button[data-src]'); if(b)setSource(b.dataset.src); });
-  $('#amb').addEventListener('click',function(e){ var b=e.target.closest('button[data-g]'); if(!b)return; $$('#amb button').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')}); var g=b.dataset.g; libMix=(g==='variada')?'variada':(g+':100'); qi=0; buildQueue(); if(playing)playItem(); saveMusicMix(); });
+  $('#amb').addEventListener('click',function(e){ var b=e.target.closest('button[data-g]'); if(!b)return; $$('#amb button').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')}); var g=b.dataset.g; libMix=(g==='variada')?'variada':(g+':100'); libAhead=null; prefetchLib(); qi=0; buildQueue(); if(playing)playItem(); saveMusicMix(); });
   function acctTok(){ try{ return localStorage.getItem('bpms_tok')||''; }catch(e){ return ''; } }
   function saveMusicMix(){ var t=acctTok(); if(!t)return; try{ fetch(API+'/music/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t,mix:libMix})}); }catch(e){} }
   function applyLibMix(){ var g=(libMix==='variada')?'variada':libMix.split(':')[0]; $$('#amb button').forEach(function(x){ x.setAttribute('aria-pressed', x.dataset.g===g?'true':'false'); }); }
   async function loadAccount(){
     var t=acctTok(); if(!t) return;
+    try{ var meR=await fetch(API+'/me',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})}); var me=await meR.json(); if(me&&me.ok&&me.name){ var h=document.querySelector('.acct h2'); if(h)h.textContent=me.name; } }catch(e){}
     try{ var mr=await fetch(API+'/music/get',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})}); var md=await mr.json(); if(md&&md.ok&&md.mix){ libMix=md.mix; applyLibMix(); } }catch(e){}
+    libAhead=null; prefetchLib();
     try{
       var r=await fetch(API+'/ad/list',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})});
       var d=await r.json();
@@ -668,7 +675,7 @@
     // grupo de ejemplo: anuncio de temporada programado para Navidad (todos a la vez)
     groups.push({id:nid(),name:'Especiales de Navidad',kind:'ad',members:[ads[2].id],mode:'shared',sch:{start:'2026-12-01',end:'2026-12-24',from:'',to:'',days:daysAll(),every:2}});
   })();
-  wireBulk('music'); wireBulk('ad'); renderUploads(); renderAds(); renderSch(); renderGroups(); setSource('lib'); loadAccount();
+  wireBulk('music'); wireBulk('ad'); renderUploads(); renderAds(); renderSch(); renderGroups(); setSource('lib'); prefetchLib(); loadAccount();
   // seguridad: pausar/parar el audio si el panel se oculta o se cierra (evita que siga sonando)
   try{
     document.addEventListener('visibilitychange', function(){ if(document.hidden && playing) pausePlay(); });
