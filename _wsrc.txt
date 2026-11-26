@@ -776,28 +776,17 @@ async function handleMusicContribute(req, env){
   try{ bin = Uint8Array.from(atob(b64), function(ch){ return ch.charCodeAt(0); }); }catch(e){ return json({ error:"Audio invalido" },400); }
   if(bin.length < 20000)        return json({ error:"El archivo es muy corto o invalido" },400);
   if(bin.length > 10*1024*1024) return json({ error:"El archivo es muy grande (maximo 10 MB)" },413);
+  // El filtro va sobre el TEXTO que escribe el cliente (el nombre, arriba, ya
+  // paso por musicFindBad). Si paso, la cancion entra DIRECTO al repertorio.
   const uid = crypto.randomUUID().replace(/-/g,"");
   const key = "uploads/" + uid + ".mp3";
   await env.REPERTORIO.put(key, bin, { httpMetadata:{ contentType:"audio/mpeg" } });
-  const tr = await transcribeAudio(env, bin);
-  if(tr.ok){
-    const badLyric = musicFindBad(tr.text || "");
-    if(badLyric){
-      try{ await env.REPERTORIO.delete(key); }catch(e){}
-      return json({ error:"La cancion contiene contenido no permitido y no se acepto.", blocked: badLyric },422);
-    }
-    const sid = await addSongToManifest(env, key, title, genre);
-    if(!sid){ try{ await env.REPERTORIO.delete(key); }catch(e){} return json({ error:"No se pudo publicar ahora, intenta de nuevo" },503); }
-    const list = await getContrib(env);
-    list.push({ sid:sid, uid:uid, key:key, cid:c.id, cname:c.name, name:title, genre:genre, addedAt:new Date().toISOString() });
-    await putContrib(env, list);
-    return json({ ok:true, status:"publicada", id:sid, genre:genre });
-  } else {
-    const list = await getUnverified(env);
-    list.push({ uid:uid, key:key, cid:c.id, cname:c.name, name:title, genre:genre, reason:tr.reason, detail:tr.detail||"", createdAt:new Date().toISOString() });
-    await putUnverified(env, list);
-    return json({ ok:true, status:"en_revision", reason:tr.reason, detail:tr.detail||"", note:"No pudimos verificar el audio automaticamente; quedo en revision." });
-  }
+  const sid = await addSongToManifest(env, key, title, genre);
+  if(!sid){ try{ await env.REPERTORIO.delete(key); }catch(e){} return json({ error:"No se pudo publicar ahora, intenta de nuevo" },503); }
+  const list = await getContrib(env);
+  list.push({ sid:sid, uid:uid, key:key, cid:c.id, cname:c.name, name:title, genre:genre, addedAt:new Date().toISOString() });
+  await putContrib(env, list);
+  return json({ ok:true, status:"publicada", id:sid, genre:genre });
 }
 async function handleMusicPreview(req, env, uid){
   const key = "uploads/" + uid + ".mp3";
