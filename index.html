@@ -308,7 +308,7 @@
         <label style="display:flex;gap:9px;margin-top:14px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="contribRights" style="width:auto;margin:3px 0 0"> <span>Confirmo que tengo los derechos para aportar esta música al repertorio de Sisan.</span></label>
         <label style="display:flex;gap:9px;margin-top:9px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="contribNoReg" style="width:auto;margin:3px 0 0"> <span>Confirmo que <b>no es reguetón</b> y no tiene groserías ni contenido sexual.</span></label>
         <div style="margin-top:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="btn primary" id="contribBtn">Enviar al repertorio</button> <span id="contribMsg" style="font-size:13px"></span></div>
-        <p class="foot" style="margin-top:12px">Revisamos el audio automáticamente: si trae groserías o contenido no permitido, se rechaza. El reguetón no se acepta. Máximo 10 MB por canción.</p>
+        <p class="foot" style="margin-top:12px">Revisamos el nombre que escribes: si trae groserías, contenido no permitido o reguetón, se rechaza automáticamente. No se acepta reguetón. Máximo 10 MB por canción.</p>
       </div>
       <div class="edu"><div class="eyebrow">POR QUÉ FUNCIONA</div><p><b>La música que vende, no la que te gusta.</b> El repertorio está curado para el punto de venta: el ritmo y el ambiente hacen que tus clientes compren más.</p></div>
     </div>
@@ -356,7 +356,7 @@
 
   <!-- AFILIADO -->
   <section class="view" id="v-afiliado" hidden>
-    <div class="vhead"><h1>Programa de Afiliados</h1><p>Refiere negocios con tu link y gana comisión recurrente por cada cuenta activa.</p></div>
+    <div class="vhead"><h1>Programa de Afiliados</h1><p>Refiere negocios con tu link y gana comisión recurrente por cada cuenta activa. <b style="color:var(--acc)">Los números de abajo son un ejemplo de cómo se vería tu panel.</b></p></div>
     <div class="kpis" style="margin-bottom:14px">
       <div class="kpi"><div class="l">Referidos activos</div><div class="v tnum">14</div></div>
       <div class="kpi"><div class="l">Comisión / mes</div><div class="v tnum">$112<small>.00</small></div></div>
@@ -371,7 +371,7 @@
 
   <!-- REVENDEDOR -->
   <section class="view" id="v-revendedor" hidden>
-    <div class="vhead"><h1>Revendedor / Agencia</h1><p>Compras al por mayor y revendes a tu precio, con tus clientes bajo tu cuenta y tu marca.</p></div>
+    <div class="vhead"><h1>Revendedor / Agencia</h1><p>Compras al por mayor y revendes a tu precio, con tus clientes bajo tu cuenta y tu marca. <b style="color:var(--acc)">Los números de abajo son un ejemplo de cómo se vería tu panel.</b></p></div>
     <div class="kpis" style="margin-bottom:14px">
       <div class="kpi"><div class="l">Tus clientes</div><div class="v tnum">31</div></div>
       <div class="kpi"><div class="l">Ingreso / mes</div><div class="v tnum">$1,239<small>.69</small></div></div>
@@ -493,13 +493,15 @@
 
   function renderRows(){
     var w=$('#rows'); w.innerHTML='';
-    if(!queue.length){ w.innerHTML='<div class="empty">Sube tu música (Música ▸ Sube tu música) para empezar. Luego se alterna: canción → anuncio → canción.</div>'; return; }
+    if(!queue.length){ w.innerHTML='<div class="empty">Dale play para empezar la rotación: se alterna música y anuncios automáticamente.</div>'; return; }
     var start=Math.max(0,qi);
     for(var i=start;i<Math.min(queue.length,start+8);i++){ (function(i){
       var it=queue[i], isAd=it.kind==='ad', isCur=i===qi;
-      var dur = isAd ? (it.ad&&it.ad.type==='audio'?'0:20':fmt(DEMO_AD)) : (it.url?'—':fmt(DEMO_SONG));
+      var dur = isAd ? (it.ad&&it.ad.type==='audio'?'0:20':fmt(DEMO_AD)) : '—';
       var d=document.createElement('div'); d.className='row'+(isAd?' ad':'')+(isCur?' cur':'');
-      d.innerHTML='<span class="ic">'+(isAd?'📢':'🎵')+'</span><span class="g"><b></b><span>'+(isAd?'Anuncio':(isCur?'Sonando ahora':'En cola'))+'</span></span>'+(isCur?'<span class="nowtag" id="rowtag">AL AIRE</span>':'<span class="dur mono">'+dur+'</span>');
+      var label = isAd?'Anuncio':(isCur?(playing?'Sonando ahora':'En pausa'):'En cola');
+      var right = (isCur&&playing) ? '<span class="nowtag" id="rowtag">AL AIRE</span>' : '<span class="dur mono">'+(isCur?'—':dur)+'</span>';
+      d.innerHTML='<span class="ic">'+(isAd?'📢':'🎵')+'</span><span class="g"><b></b><span>'+label+'</span></span>'+right;
       d.querySelector('b').textContent = isAd ? (it.name||'Anuncio') : 'Música';
       w.appendChild(d);
     })(i); }
@@ -517,7 +519,7 @@
     $('#sub').textContent = isAd
       ? (it.ad&&it.ad.type==='audio' ? 'Tu anuncio' : 'Locutor · voz')
       : (it.lib ? 'Librería Sisan' : (it.url ? (it.by||'Tu música') : (it.by? it.by+' · Librería (vista previa)' : 'Librería (vista previa)')));
-    $('#nosnd').hidden = isAd ? true : (it.lib ? true : !!it.url);
+    $('#nosnd').hidden = true;   // la libreria siempre suena; este aviso ya no aplica
   }
 
   function playItem(){
@@ -562,7 +564,10 @@
     raf=requestAnimationFrame(loop);
   }
 
-  function startPlay(){ if(!queue.length)buildQueue(); if(!queue.length){ renderRows(); $('#deck').classList.remove('playing'); $('#title').textContent='Sube tu música para empezar'; $('#sub').textContent='Música ▸ Sube tu música (MP3)'; $('#nosnd').hidden=false; return; } playing=true; $('#deck').classList.add('playing'); $('#play').textContent='⏸'; $('#onair').classList.add('on'); $('#onair').innerHTML='<span class="lamp"></span> AL AIRE'; if(qi<0)qi=0; playItem(); if(!raf)raf=requestAnimationFrame(loop); }
+  function startPlay(){ if(!queue.length)buildQueue(); if(!queue.length){ renderRows(); $('#deck').classList.remove('playing'); $('#title').textContent='Preparando la rotación…'; $('#sub').textContent='Un momento'; return; }
+    // Desbloquea el audio dentro del gesto del clic (política de autoplay del navegador)
+    try{ musicEl.play().then(function(){ if(!cur.isAudio){ musicEl.pause(); } }).catch(function(){}); }catch(e){}
+    playing=true; $('#deck').classList.add('playing'); $('#play').textContent='⏸'; $('#onair').classList.add('on'); $('#onair').innerHTML='<span class="lamp"></span> AL AIRE'; if(qi<0)qi=0; playItem(); if(!raf)raf=requestAnimationFrame(loop); }
   function pausePlay(){ playToken++; cur.acc=elapsed(); playing=false; $('#deck').classList.remove('playing'); $('#play').textContent='▶'; $('#onair').classList.remove('on'); $('#onair').innerHTML='<span class="lamp"></span> EN ESPERA'; stopBed(); stopAllAudio(); if(raf){cancelAnimationFrame(raf);raf=null;} }
   $('#play').addEventListener('click',function(){ playing?pausePlay():startPlay(); });
   $('#next').addEventListener('click',function(){ if(!playing){startPlay();return;} advance(); });

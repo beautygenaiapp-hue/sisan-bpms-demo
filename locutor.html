@@ -392,6 +392,9 @@ async function doGenerate(){
     document.getElementById("player").src=url;
     document.getElementById("dl").href=url;
     document.getElementById("result").classList.add("show");
+    // cada anuncio nuevo se puede guardar de nuevo (el boton no debe quedar pegado)
+    var _sa=document.getElementById("saveAcct"); if(_sa){ _sa.disabled=false; _sa.textContent="💾 Guardar en mi cuenta"; }
+    var _sm=document.getElementById("saveMsg"); if(_sm) _sm.textContent="";
     // Tomas gratis restantes de este mismo texto
     const regLeft = (regen!=null) ? parseInt(regen,10) : 0;
     if(rr && note){
@@ -425,7 +428,7 @@ document.querySelectorAll(".plan").forEach(b=>{
   };
 });
 
-document.getElementById("logout").onclick=(e)=>{ e.preventDefault(); try{localStorage.removeItem("bpms_tok");}catch(e){} location.reload(); };
+document.getElementById("logout").onclick=(e)=>{ e.preventDefault(); try{localStorage.removeItem("bpms_tok");}catch(e){} location.href=location.pathname; };
 
 renderVoices(); renderTones();
 
@@ -556,7 +559,7 @@ async function mixVoiceWithMusic(voiceArr, jingleArr, level){
 (async function(){
   let t=null;
   const urlTok=new URLSearchParams(location.search).get("t");
-  if(urlTok){ t=urlTok; try{ localStorage.setItem("bpms_tok",urlTok); }catch(e){} }
+  if(urlTok){ t=urlTok; try{ localStorage.setItem("bpms_tok",urlTok); }catch(e){} try{ history.replaceState(null,'',location.pathname); }catch(e){} }
   if(!t){ try{ t=localStorage.getItem("bpms_tok"); }catch(e){} }
   if(t){ TOKEN=t; const res=await post("/me",{token:t});
     if(res.ok){ enterApp(res.data.name,res.data.available); } else { try{localStorage.removeItem("bpms_tok");}catch(e){} } }
@@ -581,7 +584,10 @@ async function saveToAccount(btn){
     var buf=await blob.arrayBuffer(); var bytes=new Uint8Array(buf); var bin=''; var CH=0x8000;
     for(var i=0;i<bytes.length;i+=CH){ bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+CH)); }
     var b64=btoa(bin);
-    var name='Anuncio '+new Date().toLocaleDateString('es-PR',{day:'2-digit',month:'short',year:'numeric'});
+    var _txt=((document.getElementById('text')||{}).value||'').trim().replace(/\s+/g,' ');
+    var _snip=_txt?(' — '+_txt.slice(0,32)+(_txt.length>32?'…':'')):'';
+    var _d=new Date();
+    var name='Anuncio '+_d.toLocaleDateString('es-PR',{day:'2-digit',month:'short'})+' '+_d.toLocaleTimeString('es-PR',{hour:'numeric',minute:'2-digit'})+_snip;
     var r=await fetch('https://bpms-voice.beautygenaiapp.workers.dev/ad/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:tok,name:name,audio_b64:b64})});
     var d=await r.json().catch(function(){return {};});
     if(r.ok&&d.ok){ btn.textContent='✓ Guardado en tu cuenta'; if(msg)msg.textContent='Ya aparece en tu consola.'; }
