@@ -526,7 +526,7 @@
       if(it.lib){
         stopBed(); var tok=++playToken;
         function playLib(d){ it.name=d.t||'Canción'; it.id=d.id; it.by='Librería Sisan'; showDeck(it); renderRows();
-          cur.isAudio=true; cur.el=musicEl; musicEl.src=API+'/audio/'+encodeURIComponent(d.id); musicEl.volume=vol; musicEl.onended=advance; musicEl.onerror=function(){ if(tok===playToken)advance(); }; musicEl.play().catch(function(){}); }
+          cur.isAudio=true; cur.el=musicEl; musicEl.src=API+'/audio/'+encodeURIComponent(d.id); musicEl.volume=vol; musicEl.onended=advance; musicEl.onerror=function(){ if(tok===playToken)advance(); }; musicEl.onplaying=function(){ var n=$('#nosnd'); if(n)n.hidden=true; }; musicEl.play().catch(function(){}); }
         var pre=libAhead; libAhead=null; prefetchLib();
         if(pre&&pre.id){ cur.isAudio=true; cur.el=musicEl; playLib(pre); }   // síncrono: conserva el gesto del play -> sí suena
         else { cur.total=DEMO_SONG; $('#title').textContent='Librería Sisan'; $('#sub').textContent='Buscando la próxima canción…';

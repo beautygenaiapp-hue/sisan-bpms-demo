@@ -581,7 +581,7 @@ async function saveToAccount(btn){
     var buf=await blob.arrayBuffer(); var bytes=new Uint8Array(buf); var bin=''; var CH=0x8000;
     for(var i=0;i<bytes.length;i+=CH){ bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+CH)); }
     var b64=btoa(bin);
-    var name='Anuncio '+new Date().toLocaleDateString('es-PR');
+    var name='Anuncio '+new Date().toLocaleDateString('es-PR',{day:'2-digit',month:'short',year:'numeric'});
     var r=await fetch('https://bpms-voice.beautygenaiapp.workers.dev/ad/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:tok,name:name,audio_b64:b64})});
     var d=await r.json().catch(function(){return {};});
     if(r.ok&&d.ok){ btn.textContent='✓ Guardado en tu cuenta'; if(msg)msg.textContent='Ya aparece en tu consola.'; }
