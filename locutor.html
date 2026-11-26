@@ -69,6 +69,7 @@
 <body>
 <div class="wrap">
   <header>
+    <a href="index.html" style="text-decoration:none;color:var(--acc);font-weight:700;font-size:14px;margin-right:12px;white-space:nowrap">← Volver a la emisora</a>
     <h1>BPMS Online</h1><span class="tag">Generador de anuncios</span>
     <span class="bal hidden" id="bal">Anuncios: <span class="n" id="balN">0</span></span>
   </header>
@@ -590,7 +591,7 @@ async function saveToAccount(btn){
     var name='Anuncio '+_d.toLocaleDateString('es-PR',{day:'2-digit',month:'short'})+' '+_d.toLocaleTimeString('es-PR',{hour:'numeric',minute:'2-digit'})+_snip;
     var r=await fetch('https://bpms-voice.beautygenaiapp.workers.dev/ad/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:tok,name:name,audio_b64:b64})});
     var d=await r.json().catch(function(){return {};});
-    if(r.ok&&d.ok){ btn.textContent='✓ Guardado en tu cuenta'; if(msg)msg.textContent='Ya aparece en tu consola.'; }
+    if(r.ok&&d.ok){ btn.textContent='✓ Guardado en tu cuenta'; if(msg)msg.innerHTML='Ya está en tu cuenta. <a href="index.html" style="color:var(--acc);font-weight:700;text-decoration:none">Ir a la emisora → Anuncios para programarlo →</a>'; }
     else { btn.textContent=old; btn.disabled=false; if(msg)msg.textContent=(d&&d.error)||'No se pudo guardar.'; }
   }catch(e){ btn.textContent=old; btn.disabled=false; if(msg)msg.textContent='Error al guardar.'; }
 }
