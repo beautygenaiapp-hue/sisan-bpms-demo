@@ -104,6 +104,15 @@
       <div class="msg" id="credMsg"></div>
     </div>
 
+    <!-- Música aportada -->
+    <div class="card">
+      <h2>Música aportada por clientes</h2>
+      <div id="musicWrap" class="muted">Cargando…</div>
+      <div class="mt"><button class="ghost sm" id="btnMusicReload">Refrescar música</button></div>
+      <div class="msg" id="musicMsg"></div>
+      <div class="foot">La música que pasa el filtro entra sola al repertorio. Aquí puedes escuchar lo que quedó en revisión, aprobarlo o quitar cualquier canción (incluido el reguetón que se cuele).</div>
+    </div>
+
     <p class="foot">Sesión guardada solo en este navegador. <a href="#" id="logout" style="color:var(--acc)">Cerrar sesión</a></p>
   </div>
 </div>
@@ -163,7 +172,41 @@ async function doLogin(){
   document.getElementById("loginCard").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   loadClients();
+  loadMusic();
 }
+
+// ---- Música aportada ----
+let MUSIC_GENRES=[];
+async function ensureGenres(){ if(MUSIC_GENRES.length) return; try{ const r=await fetch(API+'/music/genres'); const d=await r.json(); MUSIC_GENRES=(d&&d.genres)||[]; }catch(e){} }
+function genreSelect(id, cur){ let h='<select id="'+id+'" style="width:auto;display:inline-block;padding:5px 8px">'; MUSIC_GENRES.forEach(function(g){ h+='<option value="'+esc(g)+'"'+(g===cur?' selected':'')+'>'+esc(g)+'</option>'; }); h+='</select>'; return h; }
+async function loadMusic(){
+  const wrap=document.getElementById('musicWrap'); if(!wrap)return; wrap.innerHTML='<span class="muted">Cargando…</span>';
+  await ensureGenres();
+  const u=await api('/admin/music/unverified'); const l=await api('/admin/music/list');
+  const unv=(u.ok&&u.data&&u.data.unverified)||[]; const pub=(l.ok&&l.data&&l.data.contributed)||[];
+  let h='';
+  h+='<div style="font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin:2px 0 8px">En revisión ('+unv.length+')</div>';
+  if(!unv.length){ h+='<div class="muted" style="margin-bottom:12px">Nada en revisión.</div>'; }
+  else { unv.forEach(function(it){
+    h+='<div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px">'
+      +'<b>'+esc(it.name)+'</b> <span class="muted">· '+esc(it.cname||it.cid||'')+'</span><br>'
+      +'<audio controls preload="none" src="'+API+esc(it.url)+'" style="height:34px;margin:6px 0;max-width:100%"></audio><br>'
+      +'Género: '+genreSelect('g_'+it.uid, it.genre)+' '
+      +'<button class="sm" onclick="approveMusic(\''+it.uid+'\')">Aprobar</button> '
+      +'<button class="sm ghost" onclick="removeUnv(\''+it.uid+'\')">Quitar</button>'
+      +'</div>';
+  }); }
+  h+='<div style="font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin:14px 0 8px">En el repertorio ('+pub.length+')</div>';
+  if(!pub.length){ h+='<div class="muted">Aún no hay aportes publicados.</div>'; }
+  else { h+='<div style="overflow-x:auto"><table><thead><tr><th>Canción</th><th>Género</th><th>Cliente</th><th></th></tr></thead><tbody>';
+    pub.forEach(function(it){ h+='<tr><td>'+esc(it.name)+'</td><td>'+esc(it.genre)+'</td><td class="muted">'+esc(it.cname||it.cid||'')+'</td><td><button class="sm ghost" onclick="removeContrib(\''+it.sid+'\')">Quitar</button></td></tr>'; });
+    h+='</tbody></table></div>';
+  }
+  wrap.innerHTML=h;
+}
+async function approveMusic(uid){ const g=document.getElementById('g_'+uid); const genre=g?g.value:''; const res=await api('/admin/music/approve',{method:'POST',body:JSON.stringify({uid:uid,genre:genre})}); const m=document.getElementById('musicMsg'); if(res.ok){ show(m,'Aprobada y publicada en el repertorio.',true); } else show(m,'Error: '+(res.data&&res.data.error||res.status),false); loadMusic(); }
+async function removeUnv(uid){ if(!confirm('¿Quitar este aporte en revisión?'))return; const res=await api('/admin/music/remove',{method:'POST',body:JSON.stringify({uid:uid})}); const m=document.getElementById('musicMsg'); if(res.ok){ show(m,'Quitado.',true); } else show(m,'Error.',false); loadMusic(); }
+async function removeContrib(sid){ if(!confirm('¿Quitar esta canción del repertorio? Dejará de sonar para todos.'))return; const res=await api('/admin/music/remove',{method:'POST',body:JSON.stringify({sid:sid})}); const m=document.getElementById('musicMsg'); if(res.ok){ show(m,'Quitada del repertorio.',true); } else show(m,'Error.',false); loadMusic(); }
 
 document.getElementById("btnLogin").onclick=doLogin;
 document.getElementById("adminTok").addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
@@ -194,6 +237,7 @@ document.getElementById("btnCredit").onclick=async()=>{
 };
 
 document.getElementById("btnReload").onclick=loadClients;
+document.getElementById("btnMusicReload").onclick=loadMusic;
 document.getElementById("logout").onclick=(e)=>{ e.preventDefault(); try{localStorage.removeItem("bpms_adm");}catch(e){} location.reload(); };
 
 // auto-login si hay token guardado
@@ -202,3 +246,4 @@ document.getElementById("logout").onclick=(e)=>{ e.preventDefault(); try{localSt
 </script>
 </body>
 </html>
+

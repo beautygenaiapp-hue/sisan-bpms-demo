@@ -277,16 +277,9 @@
 
     <div class="tabpanel" id="tab-musica">
       <div class="card">
-        <h3>Tu música</h3>
-        <p class="sub">Sube tus MP3. Cada canción se puede programar con ⏱ (fechas, días y horas).</p>
-        <label class="drop" for="file"><b>⬆ Sube tu música (MP3)</b> — arrastra o toca</label>
-        <input id="file" type="file" accept="audio/*" multiple hidden>
-        <div class="seg" id="srcSeg" role="tablist" style="margin-top:12px">
-          <button role="tab" aria-selected="true" data-src="lib">Librería Sisan</button>
-          <button role="tab" aria-selected="false" data-src="mine">Mi música</button>
-        </div>
-        <div id="src-lib" style="margin-top:12px">
-          <p class="sub" style="margin:0 0 10px">Escoge el estilo de tu tienda. <b>Variada</b> mezcla todo el repertorio balanceado; o escoge un género.</p>
+        <h3>El estilo de tu emisora</h3>
+        <p class="sub">Escoge el estilo de tu tienda. <b>Variada</b> mezcla todo el repertorio balanceado; o escoge un género.</p>
+        <div id="src-lib" style="margin-top:4px">
           <div class="amb" id="amb">
             <button aria-pressed="true" data-g="variada"><b>Variada</b><span>De todo, balanceado</span></button>
             <button aria-pressed="false" data-g="Salsa"><b>Salsa</b><span>Clásica y moderna</span></button>
@@ -300,11 +293,22 @@
             <button aria-pressed="false" data-g="Semana Santa"><b>Semana Santa</b><span>Temporada</span></button>
           </div>
         </div>
-        <div id="src-mine" hidden style="margin-top:12px">
-          <div class="bulkbar" id="bulkMus" hidden><button type="button" class="lnk" id="musSelAll">Seleccionar todas</button><span class="cnt" id="musCnt">0 seleccionadas</span><span class="bspacer"></span><button class="btn primary sm" id="musSchedBtn" disabled>📅 Programar juntas</button></div>
-          <div class="bulkedit" id="musBulkEdit" hidden></div>
-          <div class="list" id="uplist"></div>
-        </div>
+      </div>
+
+      <div class="card" id="aportaCard">
+        <h3>Aporta tu música al repertorio</h3>
+        <p class="sub">Sube una canción. Si pasa el filtro de contenido, entra al repertorio de Sisan y empieza a sonar en la rotación.</p>
+        <label class="drop" for="contribFile"><b>⬆ Escoge tu canción (MP3)</b> — toca para subir</label>
+        <input id="contribFile" type="file" accept="audio/*" hidden>
+        <div id="contribPicked" class="sub" style="margin-top:8px"></div>
+        <label class="fl" style="margin-top:12px;display:block">Nombre de la canción</label>
+        <input id="contribName" type="text" maxlength="120" placeholder="Ej: Marc Anthony - Vivir Mi Vida" style="width:100%;box-sizing:border-box">
+        <label class="fl" style="margin-top:12px;display:block">Género</label>
+        <select id="contribGenre" style="width:100%;box-sizing:border-box"><option value="">Escoge un género…</option></select>
+        <label style="display:flex;gap:9px;margin-top:14px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="contribRights" style="width:auto;margin:3px 0 0"> <span>Confirmo que tengo los derechos para aportar esta música al repertorio de Sisan.</span></label>
+        <label style="display:flex;gap:9px;margin-top:9px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="contribNoReg" style="width:auto;margin:3px 0 0"> <span>Confirmo que <b>no es reguetón</b> y no tiene groserías ni contenido sexual.</span></label>
+        <div style="margin-top:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="btn primary" id="contribBtn">Enviar al repertorio</button> <span id="contribMsg" style="font-size:13px"></span></div>
+        <p class="foot" style="margin-top:12px">Revisamos el audio automáticamente: si trae groserías o contenido no permitido, se rechaza. El reguetón no se acepta. Máximo 10 MB por canción.</p>
       </div>
       <div class="edu"><div class="eyebrow">POR QUÉ FUNCIONA</div><p><b>La música que vende, no la que te gusta.</b> El repertorio está curado para el punto de venta: el ritmo y el ambiente hacen que tus clientes compren más.</p></div>
     </div>
@@ -566,8 +570,7 @@
   var vol=0.8;
   $('#vol').addEventListener('input',function(e){ vol=e.target.value/100; musicEl.volume=vol; adEl.volume=Math.max(.8,vol); if(bedOn&&bedGain&&actx){ bedGain.gain.setValueAtTime(0.9*vol+0.0001, actx.currentTime); } });
 
-  function setSource(s){ source=s; $$('#srcSeg button').forEach(function(x){x.setAttribute('aria-selected',x.dataset.src===s?'true':'false')}); $('#src-lib').hidden=s!=='lib'; $('#src-mine').hidden=s!=='mine'; qi=0; buildQueue(); if(playing)playItem(); }
-  $('#srcSeg').addEventListener('click',function(e){ var b=e.target.closest('button[data-src]'); if(b)setSource(b.dataset.src); });
+  function setSource(s){ source=s; var sl=$('#src-lib'); if(sl) sl.hidden=s!=='lib'; var sm=$('#src-mine'); if(sm) sm.hidden=s!=='mine'; qi=0; buildQueue(); if(playing)playItem(); }
   $('#amb').addEventListener('click',function(e){ var b=e.target.closest('button[data-g]'); if(!b)return; $$('#amb button').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')}); var g=b.dataset.g; libMix=(g==='variada')?'variada':(g+':100'); libAhead=null; prefetchLib(); qi=0; buildQueue(); if(playing)playItem(); saveMusicMix(); });
   function acctTok(){ try{ return localStorage.getItem('bpms_tok')||''; }catch(e){ return ''; } }
   function saveMusicMix(){ var t=acctTok(); if(!t)return; try{ fetch(API+'/music/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t,mix:libMix})}); }catch(e){} }
@@ -587,8 +590,34 @@
     }catch(e){}
   }
 
-  $('#file').addEventListener('change',function(e){ Array.prototype.forEach.call(e.target.files,function(f){ if(/audio/.test(f.type))uploaded.push({id:nid(),name:f.name,url:URL.createObjectURL(f),on:true}); }); renderUploads(); if(uploaded.length)setSource('mine'); });
-  function renderUploads(){ var w=$('#uplist'); w.innerHTML=''; if(!uploaded.length){ w.innerHTML='<div class="empty">Sube tus MP3 👆 y entran en la rotación.</div>'; refreshBulk('music'); return; }
+  // ---- Aportar música al repertorio Sisan ----
+  var contribFileObj=null;
+  function fileToB64(file){ return new Promise(function(res,rej){ var fr=new FileReader(); fr.onload=function(){ var s=String(fr.result); var i=s.indexOf(','); res(i>=0?s.slice(i+1):s); }; fr.onerror=rej; fr.readAsDataURL(file); }); }
+  function cShow(msg,cls){ var m=$('#contribMsg'); if(!m)return; m.textContent=msg; m.style.color=cls==='err'?'#e5544b':(cls==='ok'?'#2fbf71':'#8a97a8'); }
+  (function(){ fetch(API+'/music/genres').then(function(r){return r.json();}).then(function(d){ if(d&&d.ok&&d.genres){ var sel=$('#contribGenre'); if(!sel)return; d.genres.forEach(function(g){ var o=document.createElement('option'); o.value=g; o.textContent=g; sel.appendChild(o); }); } }).catch(function(){}); })();
+  (function(){ var fi=$('#contribFile'); if(!fi)return; fi.addEventListener('change',function(e){ var f=e.target.files&&e.target.files[0]; contribFileObj=f||null; var p=$('#contribPicked'); if(p) p.textContent=f?('Elegida: '+f.name+' ('+Math.round(f.size/1024)+' KB)'):''; var nm=$('#contribName'); if(f&&nm&&!nm.value){ nm.value=f.name.replace(/\.[^.]+$/,''); } }); })();
+  (function(){ var btn=$('#contribBtn'); if(!btn)return; btn.addEventListener('click',async function(){
+    var t=acctTok(); if(!t){ cShow('Entra a tu cuenta primero.','err'); return; }
+    if(!contribFileObj){ cShow('Escoge un archivo de música.','err'); return; }
+    if(contribFileObj.size>10*1024*1024){ cShow('El archivo es muy grande (máximo 10 MB).','err'); return; }
+    var name=($('#contribName').value||'').trim(); if(!name){ cShow('Escribe el nombre de la canción.','err'); return; }
+    var genre=$('#contribGenre').value; if(!genre){ cShow('Escoge un género.','err'); return; }
+    if(!$('#contribRights').checked){ cShow('Confirma que tienes los derechos.','err'); return; }
+    if(!$('#contribNoReg').checked){ cShow('Confirma que no es reguetón ni contenido inapropiado.','err'); return; }
+    btn.disabled=true; cShow('Subiendo y revisando el contenido…','');
+    try{
+      var b64=await fileToB64(contribFileObj);
+      var r=await fetch(API+'/music/contribute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t,name:name,genre:genre,rights:true,noReggaeton:true,audio_b64:b64})});
+      var d=await r.json();
+      if(r.ok&&d.ok){
+        if(d.status==='publicada'){ cShow('✓ ¡Aceptada! Ya está en el repertorio ('+genre+').','ok'); }
+        else { cShow('✓ Recibida. Quedó en revisión y entrará pronto.','ok'); }
+        contribFileObj=null; $('#contribFile').value=''; $('#contribName').value=''; $('#contribGenre').value=''; $('#contribRights').checked=false; $('#contribNoReg').checked=false; var p=$('#contribPicked'); if(p)p.textContent='';
+      } else { cShow(d.error||('No se pudo enviar ('+r.status+').'),'err'); }
+    }catch(err){ cShow('No se pudo enviar. Intenta de nuevo.','err'); }
+    btn.disabled=false;
+  }); })();
+  function renderUploads(){ var w=$('#uplist'); if(!w){ return; } w.innerHTML=''; if(!uploaded.length){ w.innerHTML='<div class="empty">Sube tus MP3 👆 y entran en la rotación.</div>'; refreshBulk('music'); return; }
     uploaded.forEach(function(u){ var wrap=document.createElement('div'); wrap.className='item2';
       var head=document.createElement('div'); head.className='item';
       head.innerHTML='<input type="checkbox" class="msel" '+(sel.music[u.id]?'checked':'')+'><span>🎵</span><span class="g"><b></b><span class="st"></span></span><button class="iconbtn prog" title="Programar">⏱</button><button class="sw-toggle" aria-pressed="'+(u.on!==false)+'"></button><button class="iconbtn rm">✕</button>';
