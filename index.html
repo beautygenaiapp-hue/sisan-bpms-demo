@@ -242,7 +242,6 @@
           <span class="kind" id="kind"><span class="tally"></span> CANCIÓN</span>
           <div class="dtitle" id="title">—</div>
           <div class="dsub" id="sub">Dale play para abrir la rotación</div>
-          <div class="nosnd" id="nosnd" hidden>▶ Sin audio — sube tu MP3 para <b>escuchar</b> la música</div>
         </div>
         <div class="vu" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
       </div>
@@ -488,7 +487,7 @@
   function adName(a){ return a.type==='audio'?a.name:(a.type==='text'?a.text.slice(0,30):(a.name||'Anuncio')); }
   function adsPool(){ return ads.filter(function(a){return a.on!==false && activeNow(a,'ad');}); }
   function buildQueue(){ var songs=songsPool(), ap=adsPool(), q=[], ai=0;
-    songs.forEach(function(s,idx){ q.push(s); var k=idx+1; var due=ap.filter(function(a){ var es=effSch(a,'ad'); var e=(es&&es.every)||1; return k%e===0; }); if(due.length){ var a=due[ai%due.length]; ai++; q.push({kind:'ad',ad:a,name:adName(a)}); } });
+    songs.forEach(function(s,idx){ q.push(s); var k=idx+1; var due=ap.filter(function(a){ var es=effSch(a,'ad'); var e=(es&&es.every)||3; return k%e===0; }); if(due.length){ var a=due[ai%due.length]; ai++; q.push({kind:'ad',ad:a,name:adName(a)}); } });
     queue=q; if(qi>=queue.length)qi=0; renderRows(); }
 
   function renderRows(){
@@ -519,7 +518,6 @@
     $('#sub').textContent = isAd
       ? (it.ad&&it.ad.type==='audio' ? 'Tu anuncio' : 'Locutor · voz')
       : (it.lib ? 'Librería Sisan' : (it.url ? (it.by||'Tu música') : (it.by? it.by+' · Librería (vista previa)' : 'Librería (vista previa)')));
-    $('#nosnd').hidden = true;   // la libreria siempre suena; este aviso ya no aplica
   }
 
   function playItem(){
