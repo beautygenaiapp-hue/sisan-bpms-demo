@@ -546,7 +546,7 @@
       stopBed();
       var a=it.ad;
       if(a.type==='audio'){ cur.isAudio=true; cur.el=adEl; adEl.src=a.url; adEl.volume=Math.max(.8,vol); adEl.onended=advance; adEl.onerror=advance; adEl.play().catch(advance); }
-      else { cur.total=DEMO_AD; if(a.type==='text'&&window.speechSynthesis){ try{var u=new SpeechSynthesisUtterance(a.text); var vi=parseInt(($('#voice')||{}).value,10); if(voices[vi])u.voice=voices[vi]; u.lang='es-US'; speechSynthesis.cancel(); speechSynthesis.speak(u);}catch(e){} } }
+      else { cur.total=DEMO_AD; /* anuncios de texto: NUNCA usar la voz del teléfono; solo suena audio boricua real */ }
     }
   }
   var lastAdv=0;
@@ -635,7 +635,7 @@
   var voices=[];
   function loadVoices(){ voices=(window.speechSynthesis?speechSynthesis.getVoices():[]).filter(function(v){return /es/i.test(v.lang);}); var sel=$('#voice'); if(!sel)return; sel.innerHTML=''; if(!voices.length){sel.innerHTML='<option>Voz del sistema</option>';return;} voices.forEach(function(v,i){var o=document.createElement('option');o.value=i;o.textContent=v.name;sel.appendChild(o);}); }
   if(window.speechSynthesis){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
-  function previewAd(a){ if(playing)pausePlay(); stopAllAudio(); if(a.type==='audio'){ adEl.src=a.url; adEl.volume=Math.max(.8,vol); adEl.play().catch(function(){}); } else if(a.type==='text'&&window.speechSynthesis){ try{var u=new SpeechSynthesisUtterance(a.text); u.lang='es-US'; speechSynthesis.cancel(); speechSynthesis.speak(u);}catch(e){} } }
+  function previewAd(a){ if(playing)pausePlay(); stopAllAudio(); if(a.type==='audio'){ adEl.src=a.url; adEl.volume=Math.max(.8,vol); adEl.play().catch(function(){}); } }
   function renderAds(){ var w=$('#adlist'); w.innerHTML=''; if(!ads.length){ w.innerHTML='<div class="empty">Aún no tienes anuncios. Créalos en <b>Crear anuncio</b> y aparecerán aquí, con el botón ⏱ para programarlos.</div>'; return; }
     ads.forEach(function(a){ var wrap=document.createElement('div'); wrap.className='item2';
       var head=document.createElement('div'); head.className='item';
@@ -697,13 +697,13 @@
   (function(){
     function daysAll(){ return {mon:1,tue:1,wed:1,thu:1,fri:1,sat:1,sun:1}; }
     function adSch(ev){ return {start:'',end:'',from:'',to:'',days:daysAll(),every:ev}; }
-    // Anuncios de demostración (voz del navegador). El cliente sube los suyos en MP3.
+    // Anuncios de demostración con VOZ BORICUA REAL (audio pregrabado, servido desde el repertorio Sisan).
     var ADS=[
-      ['a1','En Supermercados Econo, los precios más bajos de Puerto Rico. ¡Visítanos hoy!',adSch(3)],
-      ['a2','Aprovecha las ofertas de la semana. Carmela y Arroz El Mago, siempre frescos.',adSch(3)],
-      ['a3','Gracias por comprar con nosotros. Tu tienda de confianza.',adSch(4)]
+      ['a1','Supermercados Econo — Ofertas','/ad/audio/demoaudit9k7xgen6909/952fffea-1f35-4139-977f-c1491eee2545',adSch(3)],
+      ['a2','Ofertas de la semana','/ad/audio/demoaudit9k7xgen6909/9d1d09bb-c1e1-4a5f-b139-32dd97979c70',adSch(3)],
+      ['a3','Gracias por tu compra','/ad/audio/demoaudit9k7xgen6909/1a5c6651-e34a-49bd-99c7-6393d535e0ba',adSch(4)]
     ];
-    ADS.forEach(function(a){ ads.push({id:nid(),type:'text',text:a[1],name:a[1],on:true,sch:a[2]}); });
+    ADS.forEach(function(a){ ads.push({id:nid(),type:'audio',name:a[1],url:API+a[2],on:true,sch:a[3]}); });
     // grupo de ejemplo: anuncio de temporada programado para Navidad (todos a la vez)
     groups.push({id:nid(),name:'Especiales de Navidad',kind:'ad',members:[ads[2].id],mode:'shared',sch:{start:'2026-12-01',end:'2026-12-24',from:'',to:'',days:daysAll(),every:2}});
   })();
