@@ -714,12 +714,11 @@ async function transcribeAudio(env, bin){
   try{
     const fd = new FormData();
     fd.append("model_id","scribe_v1");
-    fd.append("language_code","spa");
     fd.append("file", new Blob([bin], { type:"audio/mpeg" }), "cancion.mp3");
     const r = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
       method:"POST", headers:{ "xi-api-key": env.ELEVENLABS_API_KEY }, body: fd
     });
-    if(!r.ok) return { ok:false, reason:"stt_" + r.status };
+    if(!r.ok){ let det=""; try{ det=(await r.text()).slice(0,160); }catch(e){} return { ok:false, reason:"stt_" + r.status, detail:det }; }
     const d = await r.json();
     return { ok:true, text: (d && d.text) || "" };
   }catch(e){ return { ok:false, reason:"excepcion" }; }
@@ -795,9 +794,9 @@ async function handleMusicContribute(req, env){
     return json({ ok:true, status:"publicada", id:sid, genre:genre });
   } else {
     const list = await getUnverified(env);
-    list.push({ uid:uid, key:key, cid:c.id, cname:c.name, name:title, genre:genre, reason:tr.reason, createdAt:new Date().toISOString() });
+    list.push({ uid:uid, key:key, cid:c.id, cname:c.name, name:title, genre:genre, reason:tr.reason, detail:tr.detail||"", createdAt:new Date().toISOString() });
     await putUnverified(env, list);
-    return json({ ok:true, status:"en_revision", note:"No pudimos verificar el audio automaticamente; quedo en revision." });
+    return json({ ok:true, status:"en_revision", reason:tr.reason, detail:tr.detail||"", note:"No pudimos verificar el audio automaticamente; quedo en revision." });
   }
 }
 async function handleMusicPreview(req, env, uid){
