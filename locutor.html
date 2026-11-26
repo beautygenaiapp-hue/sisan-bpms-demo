@@ -363,7 +363,7 @@ async function doGenerate(){
   hide(m);
   try{
     const r=await fetch(API+"/tts",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({token:TOKEN,text:text,tone:toneKey,toneDesc:(TONES[toneKey]&&TONES[toneKey].desc)||"",voice_id:voiceId,model:"eleven_v4",voice_settings:VS})});
+      body:JSON.stringify({token:TOKEN,text:text,tone:toneKey,toneDesc:(TONES[toneKey]&&TONES[toneKey].desc)||"",voice_id:voiceId,model:"eleven_multilingual_v2",voice_settings:VS})});
     if(r.status===402){ const d=await r.json(); setBal(d.available||0); show(m,"No te alcanzan los anuncios (este cuesta "+d.needed+", tienes "+d.available+"). Compra un paquete para continuar.","warn"); return; }
     if(r.status===401){ show(m,"Sesión inválida. Entra de nuevo.","err"); return; }
     if(!r.ok){ show(m,"No se pudo generar ("+r.status+"). Intenta de nuevo.","err"); return; }
