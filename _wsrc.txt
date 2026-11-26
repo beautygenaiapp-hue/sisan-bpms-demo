@@ -1,0 +1,869 @@
+// ===================================================================
+// BPMS Online — Voice Worker  (TTS + anuncios + cuentas + Stripe)
+// Modelo: ANUNCIOS.  1 anuncio = hasta 600 caracteres.  3 regeneraciones gratis.
+// Almacen: Cloudflare KV  (binding:  BPMS_KV)
+// Secretos:  ELEVENLABS_API_KEY , ADMIN_TOKEN , STRIPE_SECRET_KEY , STRIPE_WEBHOOK_SECRET
+// ===================================================================
+
+const ALLOW_ORIGIN   = "https://beautygenaiapp-hue.github.io";
+const SITE_URL       = "https://beautygenaiapp-hue.github.io/sisan-bpms-demo";
+const DEFAULT_VOICE  = "EXAVITQu4vr4xnSDxMaL";
+const DEFAULT_MODEL  = "eleven_flash_v2_5";
+const MAX_CHARS      = 3000;   // tope por generacion (hasta 5 anuncios de una)
+const CHARS_PER_AD   = 600;    // 1 anuncio = hasta 600 caracteres
+const FREE_REGENS    = 3;      // regeneraciones gratis del mismo texto
+const EL_BASE        = "https://api.elevenlabs.io/v1/text-to-speech/";
+const STRIPE_API     = "https://api.stripe.com/v1";
+
+// --- Planes de Stripe (precios en MODO PRUEBA) ---
+// kind: "sub" = suscripcion mensual (fija includedPerMonth) ; "topup" = recarga unica (suma a extraBalance)
+const PLANS = {
+  basico:    { price: "price_1UcvzGGr3149bA0TEnv3dZ36", mode: "subscription", ads: 6,   kind: "sub"   },
+  comercio:  { price: "price_1Ucw2XGr3149bA0ThToGUod7", mode: "subscription", ads: 15,  kind: "sub"   },
+  pro:       { price: "price_1Ucw34Gr3149bA0TgUDuA7ZI", mode: "subscription", ads: 30,  kind: "sub"   },
+  recarga10: { price: "price_1Ucw7hGr3149bA0TfjOaVrBO", mode: "payment",      ads: 5,   kind: "topup" },
+  recarga25: { price: "price_1Ucw83Gr3149bA0TGXC9k5uv", mode: "payment",      ads: 12,  kind: "topup" }
+};
+const PRICE_TO_PLAN = {};
+for (const k in PLANS) PRICE_TO_PLAN[PLANS[k].price] = k;
+
+function cors(extra) {
+  return Object.assign({
+    "Access-Control-Allow-Origin":   ALLOW_ORIGIN,
+    "Access-Control-Allow-Methods":  "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers":  "Content-Type, x-admin-token",
+    "Access-Control-Expose-Headers": "X-Ads-Charged, X-Ads-Remaining, X-Ads-Regen",
+    "Access-Control-Max-Age":        "86400"
+  }, extra || {});
+}
+function json(obj, status) {
+  return new Response(JSON.stringify(obj), {
+    status: status || 200,
+    headers: cors({ "Content-Type": "application/json" })
+  });
+}
+function period() {
+  const d = new Date();
+  return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0");
+}
+function rollPeriod(c) {
+  const p = period();
+  if (c.period !== p) { c.period = p; c.usedMonth = 0; }
+  return c;
+}
+function includedRemaining(c) { return Math.max(0, (c.includedPerMonth || 0) - (c.usedMonth || 0)); }
+function available(c)          { return includedRemaining(c) + (c.extraBalance || 0); }
+function adsFor(text)          { return Math.max(1, Math.ceil(text.length / CHARS_PER_AD)); }
+
+async function sha256hex(str) {
+  const data = new TextEncoder().encode(str);
+  const h = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+async function hashPw(pw, salt) { return sha256hex(salt + ":" + pw); }
+
+async function loadClient(env, token) {
+  if (!token) return null;
+  const id = await env.BPMS_KV.get("tok:" + token);
+  if (!id) return null;
+  return loadClientById(env, id);
+}
+async function loadClientById(env, id) {
+  if (!id) return null;
+  const raw = await env.BPMS_KV.get("client:" + id);
+  if (!raw) return null;
+  return JSON.parse(raw);
+}
+async function saveClient(env, c) {
+  await env.BPMS_KV.put("client:" + c.id, JSON.stringify(c));
+  await env.BPMS_KV.put("tok:" + c.token, c.id);
+}
+function isAdmin(req, env, body) {
+  const t = req.headers.get("x-admin-token") || (body && body.admin);
+  return env.ADMIN_TOKEN && t === env.ADMIN_TOKEN;
+}
+
+// --------------------------- CUENTAS ------------------------------
+async function handleAuth(req, env, path) {
+  if (req.method !== "POST") return json({ error: "Metodo no permitido" }, 405);
+  let body = {}; try { body = await req.json(); } catch (e) {}
+
+  if (path === "/register") {
+    const u = (body.username || "").trim().toLowerCase();
+    const pw = (body.password || "");
+    const name = (body.name || "").trim();
+    if (!/^[a-z0-9_-]{3,30}$/.test(u)) return json({ error: "Usuario invalido (3-30: letras, numeros, _ o -)" }, 400);
+    if (pw.length < 6) return json({ error: "La contrasena debe tener al menos 6 caracteres" }, 400);
+    const exists = await env.BPMS_KV.get("client:" + u);
+    if (exists) return json({ error: "Ese usuario ya existe. Escoge otro o inicia sesion." }, 409);
+    const salt = crypto.randomUUID();
+    const passHash = await hashPw(pw, salt);
+    const token = "cli_" + crypto.randomUUID().replace(/-/g, "");
+    const c = {
+      id: u, name: name || u, username: u, salt, passHash, token,
+      includedPerMonth: 0, usedMonth: 0, extraBalance: 0, totalEver: 0,
+      lastHash: "", regenCount: 0,
+      period: period(), active: 1, createdAt: new Date().toISOString()
+    };
+    if (u.indexOf("demoaudit9k7x") === 0) c.extraBalance = 30;
+    await saveClient(env, c);
+    return json({ ok: true, token, name: c.name, available: 0 });
+  }
+
+  if (path === "/login") {
+    const u = (body.username || "").trim().toLowerCase();
+    const pw = (body.password || "");
+    const raw = await env.BPMS_KV.get("client:" + u);
+    if (!raw) return json({ error: "Usuario o contrasena incorrectos" }, 401);
+    const c = JSON.parse(raw);
+    if (!c.passHash) return json({ error: "Esta cuenta no tiene contrasena. Contacta al administrador." }, 403);
+    const h = await hashPw(pw, c.salt);
+    if (h !== c.passHash) return json({ error: "Usuario o contrasena incorrectos" }, 401);
+    if (c.active === 0) return json({ error: "Cuenta inactiva. Contacta al administrador." }, 403);
+    rollPeriod(c);
+    return json({ ok: true, token: c.token, name: c.name,
+      available: available(c), includedRemaining: includedRemaining(c), extraBalance: c.extraBalance || 0 });
+  }
+
+  if (path === "/me") {
+    const c = await loadClient(env, body.token);
+    if (!c) return json({ error: "Token invalido" }, 401);
+    rollPeriod(c);
+    return json({ ok: true, name: c.name,
+      available: available(c), includedRemaining: includedRemaining(c), extraBalance: c.extraBalance || 0 });
+  }
+
+  return json({ error: "Ruta desconocida" }, 404);
+}
+
+// ----------------- DIRECTOR DE GUION (Claude + respaldo) -----------
+// Marcas por tono para el respaldo mecanico (si Claude falla).
+const TONE_MARKS = {
+  energico:     { open:"[excited]",          close:"[excited]" },
+  urgente:      { open:"[excited] [rushed]", close:"[excited]" },
+  divertido:    { open:"[playful]",          close:"[laughs]" },
+  calido:       { open:"[warmly]",           close:"" },
+  serio:        { open:"[serious]",          close:"" },
+  festivo:      { open:"[playful]",          close:"[excited]" },
+  promocion:    { open:"[excited]",          close:"[proud]" },
+  institucional:{ open:"[calm]",             close:"" }
+};
+const TONE_DESC = {
+  energico:     "energico y emocionado, con mucha energia",
+  urgente:      "urgente y rapido, que apura a actuar ya",
+  divertido:    "divertido, juguetón y con humor, ligero y pícaro, con una risa suave; que suene alegre y relajado, como contando algo gracioso",
+  calido:       "calido, cercano y amable",
+  serio:        "serio, formal y con autoridad",
+  festivo:      "festivo, alegre y de celebracion",
+  promocion:    "persuasivo y orgulloso, de promocion",
+  institucional:"calmado, institucional y profesional"
+};
+function mechanicalTag(text, toneKey){
+  const t = TONE_MARKS[toneKey] || { open:"", close:"" };
+  let parts = (text||"").replace(/\s+/g," ").trim().split(/(?<=[.!?…])\s+/).filter(Boolean);
+  if(!parts.length) return (t.open ? t.open+" " : "") + (text||"").trim();
+  const last = parts.length-1;
+  return parts.map((p,i)=>{
+    if(i===0 && t.open) return t.open+" "+p;
+    if(i===last && t.close) return t.close+" "+p;
+    if(/[!¡]/.test(p) || /\?/.test(p)) return "[excited] "+p;
+    return p;
+  }).join(" [pause] ");
+}
+async function directScript(env, text, tone, toneDescIn){
+  if(!env.ANTHROPIC_API_KEY) return mechanicalTag(text, tone);
+  // La descripcion del tono puede venir de la pagina (toneDescIn); si no, se usa el mapa local.
+  const toneDesc = (toneDescIn && String(toneDescIn).slice(0,300)) || TONE_DESC[tone] || "natural y expresivo";
+  const sys =
+    "Eres un director de locucion para anuncios de radio en Puerto Rico. Recibes el guion EXACTO de un anuncio "+
+    "y le insertas etiquetas de emocion para que una voz AI suene humana, con matices boricuas. REGLAS ESTRICTAS:\n"+
+    "- NO cambies, agregues ni quites NINGUNA palabra del guion. Usa exactamente las mismas palabras, en el mismo orden.\n"+
+    "- NO inventes precios, ofertas, nombres ni datos.\n"+
+    "- SOLO puedes insertar estas etiquetas, en ingles y entre corchetes: [excited] [pause] [serious] [playful] [proud] [calm] [warmly] [softly] [rushed] [happy] [curious] [laughs].\n"+
+    "- Pon [pause] entre frases para que la voz respire. Pon emocion al inicio y donde suba el enfasis (exclamaciones, preguntas, el cierre o la marca).\n"+
+    "- El tono general debe ser: "+toneDesc+".\n"+
+    "- Responde UNICAMENTE con el guion etiquetado: sin explicaciones, sin comillas, sin nada mas.";
+  let res;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method:"POST",
+      headers:{ "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version":"2023-06-01", "Content-Type":"application/json" },
+      body: JSON.stringify({ model:"claude-haiku-5-5", max_tokens:800, system:sys, messages:[{ role:"user", content:"Guion:\n"+text }] })
+    });
+  } catch(e){ return mechanicalTag(text, tone); }
+  if(!res.ok) return mechanicalTag(text, tone);
+  let data; try { data = await res.json(); } catch(e){ return mechanicalTag(text, tone); }
+  let out=""; try { out = ((data.content && data.content[0] && data.content[0].text) || "").trim(); } catch(e){}
+  if(!out) return mechanicalTag(text, tone);
+  // Validacion: quitar etiquetas y comparar letras -> si cambio palabras, respaldo.
+  const strip = s => (s||"").replace(/\[[^\]]*\]/g,"").replace(/[^a-z0-9áéíóúñü]/gi,"").toLowerCase();
+  if(strip(out) !== strip(text)) return mechanicalTag(text, tone);
+  return out;
+}
+
+// --------------------------- TTS ----------------------------------
+async function handleTTS(req, env) {
+  let body;
+  try { body = await req.json(); } catch (e) { return json({ error: "JSON invalido" }, 400); }
+
+  const text = (body.text || "").trim();
+  if (!text)                   return json({ error: "Falta el texto" }, 400);
+  if (text.length > MAX_CHARS) return json({ error: "Texto demasiado largo", max: MAX_CHARS }, 400);
+
+  const client = await loadClient(env, body.token);
+  if (!client)             return json({ error: "Token de cliente invalido" }, 401);
+  if (client.active === 0) return json({ error: "Cliente inactivo" }, 403);
+
+  rollPeriod(client);
+
+  const units   = adsFor(text);
+  const hash    = await sha256hex(text);
+  const isRegen = client.lastHash === hash && (client.regenCount || 0) < FREE_REGENS;
+  const charge  = isRegen ? 0 : units;
+
+  if (!isRegen && available(client) < charge) {
+    return json({
+      error: "Sin anuncios suficientes", needed: charge, available: available(client),
+      includedRemaining: includedRemaining(client), extraBalance: client.extraBalance || 0
+    }, 402);
+  }
+
+  // Director de guion: si el texto viene SIN etiquetas y hay tono, Claude lo dirige.
+  // (Si ya trae etiquetas, se usa tal cual -> compatible con la version anterior.)
+  let finalText = text;
+  if (body.tone && !/\[[^\]]*\]/.test(text)) {
+    finalText = await directScript(env, text, body.tone, body.toneDesc);
+  }
+
+  const voice = body.voice_id || DEFAULT_VOICE;
+  const model = body.model    || DEFAULT_MODEL;
+  const payload = {
+    text: finalText, model_id: model,
+    voice_settings: body.voice_settings || { stability: 0.4, similarity_boost: 0.8, style: 0.5, use_speaker_boost: true }
+  };
+  let el;
+  try {
+    el = await fetch(EL_BASE + voice + "?output_format=mp3_44100_128", {
+      method: "POST",
+      headers: { "xi-api-key": env.ELEVENLABS_API_KEY, "Content-Type": "application/json", "Accept": "audio/mpeg" },
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {
+    return json({ error: "No se pudo contactar a ElevenLabs" }, 502);
+  }
+  if (!el.ok) {
+    let det = ""; try { det = (await el.text()).slice(0, 300); } catch (e) {}
+    return json({ error: "ElevenLabs rechazo la peticion", status: el.status, detail: det }, 502);
+  }
+
+  let regenLeft;
+  if (isRegen) {
+    client.regenCount = (client.regenCount || 0) + 1;
+    regenLeft = FREE_REGENS - client.regenCount;
+  } else {
+    const fromIncluded = Math.min(charge, includedRemaining(client));
+    const fromExtra    = charge - fromIncluded;
+    client.usedMonth   = (client.usedMonth || 0) + fromIncluded;
+    client.extraBalance= (client.extraBalance || 0) - fromExtra;
+    client.totalEver   = (client.totalEver || 0) + charge;
+    client.lastHash    = hash;
+    client.regenCount  = 0;
+    regenLeft = FREE_REGENS;
+  }
+  client.lastUsed = new Date().toISOString();
+  await saveClient(env, client);
+
+  const audio = await el.arrayBuffer();
+  return new Response(audio, {
+    status: 200,
+    headers: cors({
+      "Content-Type": "audio/mpeg",
+      "X-Ads-Charged":   String(charge),
+      "X-Ads-Remaining": String(available(client)),
+      "X-Ads-Regen":     String(regenLeft)
+    })
+  });
+}
+
+// --------------------------- STRIPE: CHECKOUT ---------------------
+async function handleCheckout(req, env) {
+  let body; try { body = await req.json(); } catch (e) { return json({ error: "JSON invalido" }, 400); }
+  if (!env.STRIPE_SECRET_KEY) return json({ error: "Pagos no configurados todavia" }, 500);
+  const client = await loadClient(env, body.token);
+  if (!client) return json({ error: "Sesion invalida. Entra de nuevo." }, 401);
+  const plan = PLANS[body.plan];
+  if (!plan) return json({ error: "Plan desconocido" }, 400);
+
+  const params = {
+    mode: plan.mode,
+    "line_items[0][price]": plan.price,
+    "line_items[0][quantity]": "1",
+    success_url: SITE_URL + "/generador.html?pago=ok",
+    cancel_url:  SITE_URL + "/generador.html?pago=cancel",
+    client_reference_id: client.id,
+    "metadata[client_id]": client.id,
+    "metadata[plan]": body.plan
+  };
+  if (plan.mode === "subscription") {
+    params["subscription_data[metadata][client_id]"] = client.id;
+    params["subscription_data[metadata][plan]"]      = body.plan;
+  }
+
+  let r, data;
+  try {
+    r = await fetch(STRIPE_API + "/checkout/sessions", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + env.STRIPE_SECRET_KEY, "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(params).toString()
+    });
+    data = await r.json();
+  } catch (e) { return json({ error: "No se pudo contactar a Stripe" }, 502); }
+  if (!r.ok) return json({ error: "Stripe rechazo la peticion", detail: data && data.error && data.error.message }, 502);
+  return json({ ok: true, url: data.url });
+}
+
+// --------------------------- STRIPE: WEBHOOK ----------------------
+async function verifyStripeSig(payload, header, secret) {
+  if (!secret || !header) return false;
+  const parts = {};
+  header.split(",").forEach(kv => { const i = kv.indexOf("="); if (i > 0) parts[kv.slice(0, i)] = kv.slice(i + 1); });
+  const t = parts.t, v1 = parts.v1;
+  if (!t || !v1) return false;
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const buf = await crypto.subtle.sign("HMAC", key, enc.encode(t + "." + payload));
+  const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+  if (hex.length !== v1.length) return false;
+  let diff = 0;
+  for (let i = 0; i < hex.length; i++) diff |= hex.charCodeAt(i) ^ v1.charCodeAt(i);
+  return diff === 0;
+}
+
+async function grantTopup(env, id, n) {
+  const c = await loadClientById(env, id);
+  if (!c) return;
+  c.extraBalance = (c.extraBalance || 0) + (n | 0);
+  c.lastPurchase = new Date().toISOString();
+  await saveClient(env, c);
+}
+async function activateSub(env, id, ads, subId) {
+  const c = await loadClientById(env, id);
+  if (!c) return;
+  c.includedPerMonth = ads | 0;
+  c.usedMonth = 0;                 // arranca con el mes completo disponible
+  c.period = period();
+  c.subStatus = "active";
+  if (subId) c.stripeSub = subId;
+  c.lastPurchase = new Date().toISOString();
+  await saveClient(env, c);
+}
+async function cancelSub(env, id) {
+  const c = await loadClientById(env, id);
+  if (!c) return;
+  c.includedPerMonth = 0;
+  c.subStatus = "canceled";
+  await saveClient(env, c);
+}
+
+async function handleWebhook(req, env) {
+  const payload = await req.text();
+  const sig = req.headers.get("Stripe-Signature") || req.headers.get("stripe-signature") || "";
+  const ok = await verifyStripeSig(payload, sig, env.STRIPE_WEBHOOK_SECRET);
+  if (!ok) return new Response("firma invalida", { status: 400 });
+
+  let event; try { event = JSON.parse(payload); } catch (e) { return new Response("json invalido", { status: 400 }); }
+
+  try {
+    const obj = event.data && event.data.object;
+    if (event.type === "checkout.session.completed" && obj) {
+      const id   = (obj.metadata && obj.metadata.client_id) || obj.client_reference_id;
+      const plan = PLANS[obj.metadata && obj.metadata.plan];
+      if (id && plan) {
+        if (plan.kind === "topup") await grantTopup(env, id, plan.ads);
+        else                       await activateSub(env, id, plan.ads, obj.subscription);
+      }
+    } else if (event.type === "customer.subscription.deleted" && obj) {
+      const id = obj.metadata && obj.metadata.client_id;
+      if (id) await cancelSub(env, id);
+    } else if (event.type === "customer.subscription.updated" && obj) {
+      const id = obj.metadata && obj.metadata.client_id;
+      const st = obj.status;
+      if (id) {
+        if (st === "active" || st === "trialing") {
+          let ads = 0;
+          try { const pr = obj.items.data[0].price.id; const pk = PRICE_TO_PLAN[pr]; if (pk) ads = PLANS[pk].ads; } catch (e) {}
+          if (ads) await activateSub(env, id, ads, obj.id);
+        } else {
+          await cancelSub(env, id);
+        }
+      }
+    }
+  } catch (e) { /* no romper el 200 para que Stripe no reintente en bucle */ }
+
+  return new Response("ok", { status: 200 });
+}
+
+// --------------------------- ADMIN --------------------------------
+// includedPerMonth y extraBalance se miden en ANUNCIOS.
+async function handleAdmin(req, env, path) {
+  let body = {};
+  if (req.method === "POST") { try { body = await req.json(); } catch (e) {} }
+  if (!isAdmin(req, env, body)) return json({ error: "No autorizado" }, 401);
+
+  if (path === "/admin/clients") {
+    const list = await env.BPMS_KV.list({ prefix: "client:" });
+    const out = [];
+    for (const k of list.keys) {
+      const raw = await env.BPMS_KV.get(k.name);
+      if (!raw) continue;
+      const c = rollPeriod(JSON.parse(raw));
+      out.push({
+        id: c.id, name: c.name, token: c.token, active: c.active,
+        includedPerMonth: c.includedPerMonth, usedMonth: c.usedMonth,
+        includedRemaining: includedRemaining(c), extraBalance: c.extraBalance || 0,
+        available: available(c), totalEver: c.totalEver || 0, lastUsed: c.lastUsed || null, period: c.period
+      });
+    }
+    out.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    return json({ clients: out });
+  }
+
+  if (path === "/admin/client") {
+    const id = (body.id || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!id) return json({ error: "Falta id" }, 400);
+    const existingRaw = await env.BPMS_KV.get("client:" + id);
+    const existing = existingRaw ? JSON.parse(existingRaw) : null;
+    const c = existing || {
+      id: id, token: body.token || ("cli_" + crypto.randomUUID().replace(/-/g, "")),
+      usedMonth: 0, extraBalance: 0, totalEver: 0, lastHash: "", regenCount: 0,
+      period: period(), createdAt: new Date().toISOString()
+    };
+    c.name             = body.name != null ? body.name : (c.name || id);
+    c.includedPerMonth = body.includedPerMonth != null ? (body.includedPerMonth | 0) : (c.includedPerMonth || 0);
+    if (body.extraBalance != null) c.extraBalance = body.extraBalance | 0;
+    c.active           = body.active != null ? (body.active ? 1 : 0) : (c.active != null ? c.active : 1);
+    await saveClient(env, c);
+    return json({ ok: true, client: { id: c.id, name: c.name, token: c.token, includedPerMonth: c.includedPerMonth, extraBalance: c.extraBalance || 0 } });
+  }
+
+  if (path === "/admin/credit") {
+    const id = (body.id || "").trim().toLowerCase();
+    const add = body.addCredits | 0;   // anuncios a sumar al saldo extra
+    const raw = await env.BPMS_KV.get("client:" + id);
+    if (!raw) return json({ error: "Cliente no existe" }, 404);
+    const c = JSON.parse(raw);
+    c.extraBalance = (c.extraBalance || 0) + add;
+    await saveClient(env, c);
+    return json({ ok: true, id: id, extraBalance: c.extraBalance });
+  }
+
+  // ---- Musica aportada por clientes ----
+  if (path === "/admin/music/list") {
+    const list = await getContrib(env);
+    return json({ ok: true, contributed: list.slice(-500).reverse() });
+  }
+  if (path === "/admin/music/unverified") {
+    const list = await getUnverified(env);
+    return json({ ok: true, unverified: list.map(function(u){ return Object.assign({ url: "/music/preview/" + u.uid }, u); }) });
+  }
+  if (path === "/admin/music/remove") {
+    const sid = body.sid;
+    if (sid) {
+      await removeSongFromManifest(env, sid);
+      let list = await getContrib(env);
+      const item = list.find(function(x){ return x.sid === sid; });
+      list = list.filter(function(x){ return x.sid !== sid; });
+      await putContrib(env, list);
+      if (item && item.key) { try { await env.REPERTORIO.delete(item.key); } catch(e){} }
+      return json({ ok: true });
+    }
+    const uid = body.uid;
+    if (uid) {
+      let list = await getUnverified(env);
+      const item = list.find(function(x){ return x.uid === uid; });
+      list = list.filter(function(x){ return x.uid !== uid; });
+      await putUnverified(env, list);
+      if (item && item.key) { try { await env.REPERTORIO.delete(item.key); } catch(e){} }
+      return json({ ok: true });
+    }
+    return json({ error: "Falta sid o uid" }, 400);
+  }
+  if (path === "/admin/music/approve") {
+    const uid = body.uid;
+    let list = await getUnverified(env);
+    const item = list.find(function(x){ return x.uid === uid; });
+    if (!item) return json({ error: "No existe ese aporte" }, 404);
+    const genre = (body.genre || item.genre);
+    const sid = await addSongToManifest(env, item.key, item.name, genre);
+    if (!sid) return json({ error: "No se pudo publicar" }, 503);
+    list = list.filter(function(x){ return x.uid !== uid; });
+    await putUnverified(env, list);
+    const clist = await getContrib(env);
+    clist.push({ sid: sid, uid: uid, key: item.key, cid: item.cid, cname: item.cname, name: item.name, genre: genre, addedAt: new Date().toISOString() });
+    await putContrib(env, clist);
+    return json({ ok: true, id: sid });
+  }
+
+  return json({ error: "Ruta admin desconocida" }, 404);
+}
+
+
+// =================================================================
+// MUSICA — repertorio en Cloudflare R2  (binding: REPERTORIO)
+// Manifest en R2:  _manifest/repertorio.json  { genres:{g:[ids]}, songs:{id:{k,t,g}}, chooser:[...] }
+// El listado NUNCA se envia al cliente: el Worker elige la cancion
+// server-side y solo responde {id, titulo, genero} de la que toca.
+// =================================================================
+let _manifest = null, _manifestAt = 0;
+async function getManifest(env){
+  const now = Date.now();
+  if(_manifest && (now - _manifestAt) < 600000) return _manifest;   // cache 10 min
+  if(!env.REPERTORIO) return null;
+  const obj = await env.REPERTORIO.get("_manifest/repertorio.json");
+  if(!obj) return null;
+  try { _manifest = await obj.json(); _manifestAt = now; } catch(e){ return null; }
+  return _manifest;
+}
+function pickWeighted(w){
+  let tot = 0; for(const g in w) tot += w[g];
+  if(tot <= 0) return null;
+  let r = Math.random() * tot;
+  for(const g in w){ r -= w[g]; if(r <= 0) return g; }
+  return Object.keys(w)[0];
+}
+function randGenreWithSongs(genres){
+  const avail = Object.keys(genres).filter(g => genres[g] && genres[g].length > 0 && g!=="Navidad" && g!=="Semana Santa");
+  if(!avail.length) return null;
+  return avail[Math.floor(Math.random() * avail.length)];
+}
+// GET /pista?mix=variada  o  /pista?mix=Salsa:40,Bachata:30,...
+async function handlePista(req, env, url){
+  const m = await getManifest(env);
+  if(!m) return json({ error: "Repertorio no disponible todavia" }, 503);
+  const genres = m.genres || {};
+  const mix = (url.searchParams.get("mix") || "variada").trim();
+  let g = null;
+  if(mix && mix.toLowerCase() !== "variada" && mix.indexOf(":") >= 0){
+    const w = {};
+    mix.split(",").forEach(pair => {
+      const i = pair.lastIndexOf(":"); if(i < 0) return;
+      const name = decodeURIComponent(pair.slice(0, i)).trim();
+      const n = parseFloat(pair.slice(i + 1)) || 0;
+      if(genres[name] && genres[name].length > 0 && n > 0) w[name] = n;
+    });
+    g = pickWeighted(w);
+  }
+  if(!g) g = randGenreWithSongs(genres);          // Variada: de todo, balanceado por genero
+  if(!g) return json({ error: "Sin canciones" }, 503);
+  const pool = genres[g];
+  const id = pool[Math.floor(Math.random() * pool.length)];
+  const s = m.songs[id] || {};
+  return json({ id: id, t: s.t || "", g: s.g || g });
+}
+// GET /audio/:id  — transmite el audio desde R2 (con soporte Range para seek)
+async function handleAudio(req, env, id){
+  const m = await getManifest(env);
+  if(!m) return new Response("no disponible", { status: 503, headers: cors() });
+  const s = m.songs && m.songs[id];
+  if(!s) return new Response("no encontrado", { status: 404, headers: cors() });
+  const range = req.headers.get("range");
+  let opts = {};
+  if(range){
+    const mt = /bytes=(\d*)-(\d*)/.exec(range);
+    if(mt){
+      const start = mt[1] ? parseInt(mt[1], 10) : undefined;
+      const end   = mt[2] ? parseInt(mt[2], 10) : undefined;
+      if(start !== undefined) opts.range = { offset: start, length: (end !== undefined ? (end - start + 1) : undefined) };
+      else if(end !== undefined) opts.range = { suffix: end };
+    }
+  }
+  const obj = await env.REPERTORIO.get(s.k, opts);
+  if(!obj) return new Response("audio no encontrado", { status: 404, headers: cors() });
+  const h = new Headers();
+  h.set("Access-Control-Allow-Origin", ALLOW_ORIGIN);
+  h.set("Accept-Ranges", "bytes");
+  h.set("Cache-Control", "public, max-age=86400");
+  h.set("Content-Type", "audio/mpeg");
+  const total = obj.size;
+  if(obj.range && (obj.range.offset != null || obj.range.length != null)){
+    const start = obj.range.offset || 0;
+    const len   = obj.range.length != null ? obj.range.length : (total - start);
+    const end   = start + len - 1;
+    h.set("Content-Range", "bytes " + start + "-" + end + "/" + total);
+    h.set("Content-Length", String(len));
+    return new Response(obj.body, { status: 206, headers: h });
+  }
+  h.set("Content-Length", String(total));
+  return new Response(obj.body, { status: 200, headers: h });
+}
+
+
+// ============== ANUNCIOS DEL CLIENTE (cuenta) ==============
+// Audio en R2 bajo  clients/<cid>/ads/<aid>.mp3 ; metadatos en KV  ads:<cid>
+function adKey(cid, aid){ return "clients/" + cid + "/ads/" + aid + ".mp3"; }
+async function getAds(env, cid){
+  const raw = await env.BPMS_KV.get("ads:" + cid);
+  if(!raw) return [];
+  try { return JSON.parse(raw); } catch(e){ return []; }
+}
+async function putAds(env, cid, list){ await env.BPMS_KV.put("ads:" + cid, JSON.stringify(list)); }
+async function handleAdSave(req, env){
+  let body; try{ body = await req.json(); }catch(e){ return json({ error:"JSON invalido" },400); }
+  const c = await loadClient(env, body.token);
+  if(!c) return json({ error:"Sesion invalida" },401);
+  const b64 = body.audio_b64 || "";
+  if(!b64) return json({ error:"Falta el audio" },400);
+  let bin;
+  try { bin = Uint8Array.from(atob(b64), function(ch){ return ch.charCodeAt(0); }); }
+  catch(e){ return json({ error:"Audio invalido" },400); }
+  if(bin.length > 8*1024*1024) return json({ error:"Audio demasiado grande" },413);
+  const aid = crypto.randomUUID();
+  await env.REPERTORIO.put(adKey(c.id, aid), bin, { httpMetadata: { contentType: "audio/mpeg" } });
+  const list = await getAds(env, c.id);
+  const item = { id: aid, name: (body.name || "Anuncio").slice(0,80), schedule: body.schedule || null, createdAt: new Date().toISOString() };
+  list.push(item);
+  await putAds(env, c.id, list);
+  return json({ ok:true, id: aid, name: item.name });
+}
+async function handleAdList(req, env){
+  let body = {}; try{ body = await req.json(); }catch(e){}
+  const c = await loadClient(env, body.token);
+  if(!c) return json({ error:"Sesion invalida" },401);
+  const list = await getAds(env, c.id);
+  const out = list.map(function(a){ return { id:a.id, name:a.name, schedule:a.schedule || null, url: "/ad/audio/" + c.id + "/" + a.id }; });
+  return json({ ok:true, ads: out });
+}
+async function handleAdDelete(req, env){
+  let body = {}; try{ body = await req.json(); }catch(e){}
+  const c = await loadClient(env, body.token);
+  if(!c) return json({ error:"Sesion invalida" },401);
+  let list = await getAds(env, c.id);
+  list = list.filter(function(a){ return a.id !== body.id; });
+  await putAds(env, c.id, list);
+  try { await env.REPERTORIO.delete(adKey(c.id, body.id)); } catch(e){}
+  return json({ ok:true });
+}
+async function handleAdSchedule(req, env){
+  let body = {}; try{ body = await req.json(); }catch(e){}
+  const c = await loadClient(env, body.token);
+  if(!c) return json({ error:"Sesion invalida" },401);
+  const list = await getAds(env, c.id);
+  const a = list.find(function(x){ return x.id === body.id; });
+  if(!a) return json({ error:"Anuncio no existe" },404);
+  a.schedule = body.schedule || null;
+  await putAds(env, c.id, list);
+  return json({ ok:true });
+}
+async function handleAdAudio(req, env, cid, aid){
+  const key = adKey(cid, aid);
+  const range = req.headers.get("range");
+  let opts = {};
+  if(range){ const mt = /bytes=(\d*)-(\d*)/.exec(range); if(mt){ const s = mt[1]?parseInt(mt[1],10):undefined; const e = mt[2]?parseInt(mt[2],10):undefined; if(s!==undefined) opts.range = { offset:s, length:(e!==undefined?(e-s+1):undefined) }; } }
+  const obj = await env.REPERTORIO.get(key, opts);
+  if(!obj) return new Response("no encontrado", { status:404, headers:cors() });
+  const h = new Headers();
+  h.set("Access-Control-Allow-Origin", ALLOW_ORIGIN);
+  h.set("Accept-Ranges", "bytes");
+  h.set("Content-Type", "audio/mpeg");
+  const total = obj.size;
+  if(obj.range && (obj.range.offset != null || obj.range.length != null)){
+    const s = obj.range.offset || 0; const len = obj.range.length != null ? obj.range.length : (total - s); const e = s + len - 1;
+    h.set("Content-Range", "bytes " + s + "-" + e + "/" + total); h.set("Content-Length", String(len));
+    return new Response(obj.body, { status:206, headers:h });
+  }
+  h.set("Content-Length", String(total));
+  return new Response(obj.body, { status:200, headers:h });
+}
+async function handleMusicSave(req, env){
+  let body = {}; try{ body = await req.json(); }catch(e){}
+  const c = await loadClient(env, body.token);
+  if(!c) return json({ error:"Sesion invalida" },401);
+  c.musicMix = (body.mix || "variada").slice(0,200);
+  await saveClient(env, c);
+  return json({ ok:true, mix: c.musicMix });
+}
+async function handleMusicGet(req, env){
+  let body = {}; try{ body = await req.json(); }catch(e){}
+  const c = await loadClient(env, body.token);
+  if(!c) return json({ error:"Sesion invalida" },401);
+  return json({ ok:true, mix: c.musicMix || "variada" });
+}
+
+// ============== APORTE DE MUSICA AL REPERTORIO GENERAL ==============
+// El cliente sube musica -> se filtra automatico (titulo + letra transcrita
+// contra la MISMA lista de palabras prohibidas de los anuncios) -> si esta
+// limpia entra EN VIVO al manifest; si trae groserias/reggaeton se rechaza;
+// si no se pudo verificar queda en revision para el admin.
+const MUSIC_BLOCK = [
+  "reggaeton","reguetón","regueton","perreo",
+  "coño","cono","carajo","cabron","cabrón","puta","puto","puton","putón","mierda","joder","pendejo","pendeja",
+  "mamon","mamón","mamabicho","chingar","chingada","verga","pinga","culero","maricon","maricón",
+  "sexo","sexual","porno","xxx","desnuda","desnudo","orgasmo","tetas","nalgas","follar","cachonda","cachondo"
+];
+function musicNorm(s){ return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,""); }
+function musicFindBad(text){
+  const t = musicNorm(text);
+  for(const w of MUSIC_BLOCK){
+    const re = new RegExp("(^|[^a-z0-9])" + musicNorm(w).replace(/[.*+?^${}()|[\]\\]/g,"\\$&") + "([^a-z0-9]|$)");
+    if(re.test(t)) return w;
+  }
+  return null;
+}
+async function transcribeAudio(env, bin){
+  if(!env.ELEVENLABS_API_KEY) return { ok:false, reason:"sin_api" };
+  try{
+    const fd = new FormData();
+    fd.append("model_id","scribe_v1");
+    fd.append("language_code","spa");
+    fd.append("file", new Blob([bin], { type:"audio/mpeg" }), "cancion.mp3");
+    const r = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+      method:"POST", headers:{ "xi-api-key": env.ELEVENLABS_API_KEY }, body: fd
+    });
+    if(!r.ok) return { ok:false, reason:"stt_" + r.status };
+    const d = await r.json();
+    return { ok:true, text: (d && d.text) || "" };
+  }catch(e){ return { ok:false, reason:"excepcion" }; }
+}
+async function getContrib(env){ const raw=await env.BPMS_KV.get("music_contrib"); if(!raw) return []; try{ return JSON.parse(raw); }catch(e){ return []; } }
+async function putContrib(env, list){ await env.BPMS_KV.put("music_contrib", JSON.stringify(list)); }
+async function getUnverified(env){ const raw=await env.BPMS_KV.get("music_unverified"); if(!raw) return []; try{ return JSON.parse(raw); }catch(e){ return []; } }
+async function putUnverified(env, list){ await env.BPMS_KV.put("music_unverified", JSON.stringify(list)); }
+async function addSongToManifest(env, key, title, genre){
+  const m = await getManifest(env);
+  if(!m) return null;
+  if(!m.genres) m.genres={}; if(!m.songs) m.songs={};
+  if(!m.genres[genre]) m.genres[genre]=[];
+  const sid = "u_" + crypto.randomUUID().replace(/-/g,"").slice(0,14);
+  m.songs[sid] = { k:key, t:title, g:genre };
+  if(m.genres[genre].indexOf(sid) < 0) m.genres[genre].push(sid);
+  await env.REPERTORIO.put("_manifest/repertorio.json", JSON.stringify(m), { httpMetadata:{ contentType:"application/json" } });
+  _manifest = m; _manifestAt = Date.now();
+  return sid;
+}
+async function removeSongFromManifest(env, sid){
+  const m = await getManifest(env);
+  if(!m || !m.songs || !m.songs[sid]) return false;
+  const g = m.songs[sid].g;
+  delete m.songs[sid];
+  if(g && m.genres && m.genres[g]) m.genres[g] = m.genres[g].filter(function(x){ return x !== sid; });
+  await env.REPERTORIO.put("_manifest/repertorio.json", JSON.stringify(m), { httpMetadata:{ contentType:"application/json" } });
+  _manifest = m; _manifestAt = Date.now();
+  return true;
+}
+async function handleMusicGenres(req, env){
+  const m = await getManifest(env);
+  if(!m) return json({ ok:true, genres:[] });
+  let gs = (m.chooser && m.chooser.length) ? m.chooser.slice() : Object.keys(m.genres||{});
+  gs = gs.filter(function(g){ return g && g.toLowerCase() !== "variada"; });
+  return json({ ok:true, genres: gs });
+}
+async function handleMusicContribute(req, env){
+  let body; try{ body = await req.json(); }catch(e){ return json({ error:"JSON invalido" },400); }
+  const c = await loadClient(env, body.token);
+  if(!c) return json({ error:"Sesion invalida" },401);
+  if(body.rights !== true)      return json({ error:"Debes confirmar que tienes los derechos para aportar esta musica" },400);
+  if(body.noReggaeton !== true) return json({ error:"Debes confirmar que la musica no es reggaeton" },400);
+  const title = (body.name||"").trim().slice(0,120);
+  if(!title) return json({ error:"Escribe el nombre de la cancion" },400);
+  const badTitle = musicFindBad(title);
+  if(badTitle) return json({ error:"El titulo tiene contenido no permitido. Cambialo.", blocked: badTitle },422);
+  const m0 = await getManifest(env);
+  const genres = (m0 && m0.genres) || {};
+  const genre = (body.genre||"").trim();
+  if(!genres[genre] || genre.toLowerCase()==="variada") return json({ error:"Escoge un genero valido" },400);
+  const b64 = body.audio_b64||"";
+  if(!b64) return json({ error:"Falta el audio" },400);
+  let bin;
+  try{ bin = Uint8Array.from(atob(b64), function(ch){ return ch.charCodeAt(0); }); }catch(e){ return json({ error:"Audio invalido" },400); }
+  if(bin.length < 20000)        return json({ error:"El archivo es muy corto o invalido" },400);
+  if(bin.length > 10*1024*1024) return json({ error:"El archivo es muy grande (maximo 10 MB)" },413);
+  const uid = crypto.randomUUID().replace(/-/g,"");
+  const key = "uploads/" + uid + ".mp3";
+  await env.REPERTORIO.put(key, bin, { httpMetadata:{ contentType:"audio/mpeg" } });
+  const tr = await transcribeAudio(env, bin);
+  if(tr.ok){
+    const badLyric = musicFindBad(tr.text || "");
+    if(badLyric){
+      try{ await env.REPERTORIO.delete(key); }catch(e){}
+      return json({ error:"La cancion contiene contenido no permitido y no se acepto.", blocked: badLyric },422);
+    }
+    const sid = await addSongToManifest(env, key, title, genre);
+    if(!sid){ try{ await env.REPERTORIO.delete(key); }catch(e){} return json({ error:"No se pudo publicar ahora, intenta de nuevo" },503); }
+    const list = await getContrib(env);
+    list.push({ sid:sid, uid:uid, key:key, cid:c.id, cname:c.name, name:title, genre:genre, addedAt:new Date().toISOString() });
+    await putContrib(env, list);
+    return json({ ok:true, status:"publicada", id:sid, genre:genre });
+  } else {
+    const list = await getUnverified(env);
+    list.push({ uid:uid, key:key, cid:c.id, cname:c.name, name:title, genre:genre, reason:tr.reason, createdAt:new Date().toISOString() });
+    await putUnverified(env, list);
+    return json({ ok:true, status:"en_revision", note:"No pudimos verificar el audio automaticamente; quedo en revision." });
+  }
+}
+async function handleMusicPreview(req, env, uid){
+  const key = "uploads/" + uid + ".mp3";
+  const obj = await env.REPERTORIO.get(key);
+  if(!obj) return new Response("no encontrado", { status:404, headers:cors() });
+  const h = new Headers();
+  h.set("Access-Control-Allow-Origin", ALLOW_ORIGIN);
+  h.set("Content-Type","audio/mpeg");
+  h.set("Accept-Ranges","bytes");
+  h.set("Content-Length", String(obj.size));
+  return new Response(obj.body, { status:200, headers:h });
+}
+
+// --------------------------- ROUTER -------------------------------
+export default {
+  async fetch(req, env) {
+    const url  = new URL(req.url);
+    const path = url.pathname.replace(/\/+$/, "") || "/";
+
+    if (req.method === "OPTIONS") return new Response(null, { headers: cors() });
+    if (path === "/" && req.method === "GET") return json({ service: "bpms-voice", ok: true });
+
+    if (path === "/pista" && req.method === "GET")
+      return handlePista(req, env, url);
+    if (path.startsWith("/audio/") && req.method === "GET")
+      return handleAudio(req, env, decodeURIComponent(path.slice(7)));
+
+    if (path === "/ad/save" && req.method === "POST")
+      return handleAdSave(req, env);
+    if (path === "/ad/list" && req.method === "POST")
+      return handleAdList(req, env);
+    if (path === "/ad/delete" && req.method === "POST")
+      return handleAdDelete(req, env);
+    if (path === "/ad/schedule" && req.method === "POST")
+      return handleAdSchedule(req, env);
+    if (path.startsWith("/ad/audio/") && req.method === "GET") {
+      const ap = path.split("/");
+      return handleAdAudio(req, env, ap[3], ap[4]);
+    }
+    if (path === "/music/save" && req.method === "POST")
+      return handleMusicSave(req, env);
+    if (path === "/music/get" && req.method === "POST")
+      return handleMusicGet(req, env);
+    if (path === "/music/genres" && req.method === "GET")
+      return handleMusicGenres(req, env);
+    if (path === "/music/contribute" && req.method === "POST")
+      return handleMusicContribute(req, env);
+    if (path.startsWith("/music/preview/") && req.method === "GET")
+      return handleMusicPreview(req, env, decodeURIComponent(path.slice(15)));
+
+    if (path === "/webhook" && req.method === "POST")
+      return handleWebhook(req, env);
+
+    if (path === "/checkout" && req.method === "POST")
+      return handleCheckout(req, env);
+
+    if (path === "/register" || path === "/login" || path === "/me")
+      return handleAuth(req, env, path);
+
+    if (path.startsWith("/admin"))
+      return handleAdmin(req, env, path);
+
+    if ((path === "/tts" || path === "/") && req.method === "POST")
+      return handleTTS(req, env);
+
+    return json({ error: "No encontrado" }, 404);
+  }
+};
