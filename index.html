@@ -577,6 +577,7 @@
     $('#sub').textContent = isAd
       ? (it.ad&&it.ad.type==='audio' ? 'Tu anuncio' : 'Locutor · voz')
       : (it.lib ? 'Librería Sisan' : (it.url ? (it.by||'Tu música') : (it.by? it.by+' · Librería (vista previa)' : 'Librería (vista previa)')));
+    try{ if('mediaSession' in navigator){ navigator.mediaSession.metadata = new MediaMetadata({ title:(it.name||(isAd?'Anuncio':'Canción')), artist:(isAd?'Anuncio':'Librería Sisan'), album:'BPMS Online' }); navigator.mediaSession.playbackState = playing?'playing':'paused'; } }catch(e){}
   }
 
   function playItem(){
@@ -776,11 +777,15 @@
   wireBulk('music'); wireBulk('ad'); renderUploads(); renderAds(); renderSch(); renderGroups(); applyAdGapUI(); setSource('lib'); prefetchLib(); loadAccount();
   OC.init();  // arranca la reserva local (caché offline) y el modo sin conexión
   try{ window.__bpms={ oc:function(){return OC.stats();}, src:function(){return {music:(musicEl.currentSrc||musicEl.src), ad:(adEl.currentSrc||adEl.src)};} }; }catch(e){}
-  // seguridad: pausar/parar el audio si el panel se oculta o se cierra (evita que siga sonando)
+  // Reproducción continua en segundo plano: la música NO se pausa al cambiar de pestaña
+  // ni al trabajar en otras ventanas (caso: la misma computadora del negocio se usa para
+  // trabajar mientras suena). Solo se detiene si el usuario cierra la pestaña o le da pausa.
   try{
-    document.addEventListener('visibilitychange', function(){ if(document.hidden && playing) pausePlay(); });
-    window.addEventListener('pagehide', function(){ try{ playing=false; stopAllAudio(); }catch(e){} });
-    window.addEventListener('blur', function(){ /* no-op: no cortar por perder foco, solo al ocultarse */ });
+    if('mediaSession' in navigator){
+      navigator.mediaSession.setActionHandler('play',  function(){ if(!playing) startPlay(); });
+      navigator.mediaSession.setActionHandler('pause', function(){ if(playing)  pausePlay(); });
+      try{ navigator.mediaSession.setActionHandler('nexttrack', function(){ if(playing) advance(); }); }catch(e){}
+    }
   }catch(e){}
 })();
 </script>
