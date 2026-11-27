@@ -414,7 +414,7 @@
   /* ===== Caché offline: reserva local de música + anuncios para cortes de internet ===== */
   var OC = (function(){
     var DBN='bpms_offline', STORE='blobs', META='meta', VER=1;
-    var TARGET=30;                       // canciones en reserva (crece hasta aquí mientras hay internet)
+    var TARGET=300;                      // canciones en reserva (crece hasta aquí mientras hay internet; se guarda permanente en disco)
     var db=null, online=(navigator.onLine!==false), filling=false, full=false;
     var haveKeys={}, reserve=[], rotate=0, curSongObj=null, curAdObj=null, started=false;
     function openDB(){ return new Promise(function(res){ try{ var rq=indexedDB.open(DBN,VER);
@@ -432,7 +432,7 @@
     async function pista(){ try{ var r=await fetch(API+'/pista?mix='+encodeURIComponent(libMix),{cache:'no-store'}); if(!r.ok) return null; return await r.json(); }catch(e){ online=false; showBar(); return null; } }
     async function fill(){ if(filling||!db||!online) return; filling=true;
       try{ for(var i=0;i<ads.length;i++){ var a=ads[i]; if(a&&a.type==='audio'&&a.url) await cacheAd(a.url); }
-        var guard=0; while(online && !full && reserve.length<TARGET && guard<80){ guard++; var d=await pista(); if(!d||!d.id) break; if(hasKey('song:'+d.id)){ ensureReserve(d.id,d.t); saveReserve(); continue; } var ok=await cacheSong(d.id,d.t); if(!ok) break; }
+        var guard=0; while(online && !full && reserve.length<TARGET && guard<400){ guard++; var d=await pista(); if(!d||!d.id) break; if(hasKey('song:'+d.id)){ ensureReserve(d.id,d.t); saveReserve(); continue; } var ok=await cacheSong(d.id,d.t); if(!ok) break; }
       }catch(e){} filling=false; updateBar(); }
     async function probe(){ try{ var r=await fetch(API+'/pista?mix='+encodeURIComponent(libMix),{cache:'no-store'}); if(r&&r.ok){ if(!online){ online=true; hideBar(); } fill(); } }catch(e){} }
     function tick(){ if(online) fill(); else probe(); }
