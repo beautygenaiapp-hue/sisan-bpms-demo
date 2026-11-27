@@ -403,13 +403,60 @@
   var playing=false, source='lib', ambiente='variada', libMix='variada';
   var playToken=0;
   var libAhead=null;
-  function prefetchLib(){ try{ fetch(API+'/pista?mix='+encodeURIComponent(libMix)).then(function(r){return r.json();}).then(function(d){ if(d&&d.id) libAhead=d; }).catch(function(){}); }catch(e){} }
+  function prefetchLib(){ if(!OC.isOnline()){ var rr=OC.nextReserve(); if(rr) libAhead=rr; return; } try{ fetch(API+'/pista?mix='+encodeURIComponent(libMix)).then(function(r){return r.json();}).then(function(d){ if(d&&d.id) libAhead=d; }).catch(function(){ OC.goOffline(); var rr=OC.nextReserve(); if(rr) libAhead=rr; }); }catch(e){} }
   var uploaded=[], ads=[];           // uploaded:{name,url,on}  ads:{type,name?,url?,text?,on}
   var musicEl=new Audio(), adEl=new Audio(); try{musicEl.setAttribute('playsinline','');adEl.setAttribute('playsinline','');musicEl.preload='auto';}catch(e){}
   function stopAllAudio(){ try{musicEl.pause();}catch(e){} try{adEl.pause();}catch(e){} try{if(window.speechSynthesis)speechSynthesis.cancel();}catch(e){} }
   var queue=[], qi=-1;
   var DEMO_SONG=15, DEMO_AD=7;
   var cur={kind:'song', total:0, isAudio:false, el:null, acc:0, startAt:0}; // acc=elapsed acumulado (demo), startAt=marca de tiempo
+
+  /* ===== Caché offline: reserva local de música + anuncios para cortes de internet ===== */
+  var OC = (function(){
+    var DBN='bpms_offline', STORE='blobs', META='meta', VER=1;
+    var TARGET=30;                       // canciones en reserva (crece hasta aquí mientras hay internet)
+    var db=null, online=(navigator.onLine!==false), filling=false, full=false;
+    var haveKeys={}, reserve=[], rotate=0, curSongObj=null, curAdObj=null, started=false;
+    function openDB(){ return new Promise(function(res){ try{ var rq=indexedDB.open(DBN,VER);
+      rq.onupgradeneeded=function(){ var d=rq.result; if(!d.objectStoreNames.contains(STORE))d.createObjectStore(STORE,{keyPath:'key'}); if(!d.objectStoreNames.contains(META))d.createObjectStore(META,{keyPath:'k'}); };
+      rq.onsuccess=function(){res(rq.result);}; rq.onerror=function(){res(null);}; }catch(e){res(null);} }); }
+    function os(store,mode){ return db.transaction(store,mode).objectStore(store); }
+    function get(store,key){ return new Promise(function(res){ try{ var r=os(store,'readonly').get(key); r.onsuccess=function(){res(r.result||null);}; r.onerror=function(){res(null);}; }catch(e){res(null);} }); }
+    function put(store,val){ return new Promise(function(res,rej){ try{ var r=os(store,'readwrite').put(val); r.onsuccess=function(){res(true);}; r.onerror=function(){rej(r.error);}; }catch(e){rej(e);} }); }
+    function allKeys(store){ return new Promise(function(res){ try{ var r=os(store,'readonly').getAllKeys(); r.onsuccess=function(){res(r.result||[]);}; r.onerror=function(){res([]);}; }catch(e){res([]);} }); }
+    function hasKey(k){ return !!haveKeys[k]; }
+    function saveReserve(){ if(db) put(META,{k:'reserve',v:reserve.map(function(r){return {id:r.id,title:r.title};})}).catch(function(){}); }
+    function ensureReserve(id,title){ for(var i=0;i<reserve.length;i++){ if(reserve[i].id===id)return; } reserve.push({id:id,title:title||'Librería Sisan'}); }
+    async function cacheSong(id,title){ if(full) return false; try{ var r=await fetch(API+'/audio/'+encodeURIComponent(id),{cache:'no-store'}); if(!r.ok) return false; var b=await r.blob(); await put(STORE,{key:'song:'+id,blob:b,title:title||'',kind:'song'}); haveKeys['song:'+id]=1; ensureReserve(id,title); saveReserve(); return true; }catch(e){ if(e&&(e.name==='QuotaExceededError'||e.code===22)) full=true; return false; } }
+    async function cacheAd(url){ if(hasKey('ad:'+url)||full) return; try{ var r=await fetch(url,{cache:'no-store'}); if(!r.ok) return; var b=await r.blob(); await put(STORE,{key:'ad:'+url,blob:b,kind:'ad'}); haveKeys['ad:'+url]=1; }catch(e){ if(e&&(e.name==='QuotaExceededError'||e.code===22)) full=true; } }
+    async function pista(){ try{ var r=await fetch(API+'/pista?mix='+encodeURIComponent(libMix),{cache:'no-store'}); if(!r.ok) return null; return await r.json(); }catch(e){ online=false; showBar(); return null; } }
+    async function fill(){ if(filling||!db||!online) return; filling=true;
+      try{ for(var i=0;i<ads.length;i++){ var a=ads[i]; if(a&&a.type==='audio'&&a.url) await cacheAd(a.url); }
+        var guard=0; while(online && !full && reserve.length<TARGET && guard<80){ guard++; var d=await pista(); if(!d||!d.id) break; if(hasKey('song:'+d.id)){ ensureReserve(d.id,d.t); saveReserve(); continue; } var ok=await cacheSong(d.id,d.t); if(!ok) break; }
+      }catch(e){} filling=false; updateBar(); }
+    async function probe(){ try{ var r=await fetch(API+'/pista?mix='+encodeURIComponent(libMix),{cache:'no-store'}); if(r&&r.ok){ if(!online){ online=true; hideBar(); } fill(); } }catch(e){} }
+    function tick(){ if(online) fill(); else probe(); }
+    function bar(){ var el=document.getElementById('ocbar'); if(!el){ el=document.createElement('div'); el.id='ocbar'; el.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99999;background:#b4232a;color:#fff;font:600 13px/1.45 system-ui,-apple-system,sans-serif;padding:9px 14px;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.28)'; document.body.appendChild(el); } return el; }
+    function showBar(){ var el=bar(); el.innerHTML='📴 Sin conexión — sonando desde la memoria ('+reserve.length+' en reserva)'; el.style.display='block'; }
+    function updateBar(){ var el=document.getElementById('ocbar'); if(el&&el.style.display!=='none'&&!online) showBar(); }
+    function hideBar(){ var el=document.getElementById('ocbar'); if(el) el.style.display='none'; }
+    return {
+      async init(){ if(started)return; started=true; db=await openDB(); if(db){ var ks=await allKeys(STORE); for(var i=0;i<ks.length;i++){ haveKeys[ks[i]]=1; } var m=await get(META,'reserve'); if(m&&m.v&&m.v.length){ reserve=m.v.slice(); } }
+        try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(e){}
+        window.addEventListener('online', function(){ online=true; hideBar(); fill(); });
+        window.addEventListener('offline', function(){ online=false; showBar(); });
+        setInterval(tick, 12000); fill(); },
+      isOnline(){ return online; },
+      goOffline(){ online=false; showBar(); },
+      nextReserve(){ if(!reserve.length) return null; var it=reserve[rotate%reserve.length]; rotate++; return {id:it.id, t:it.title, lib:true}; },
+      songSrc(id,cb){ get(STORE,'song:'+id).then(function(rec){ if(rec&&rec.blob){ try{ if(curSongObj)URL.revokeObjectURL(curSongObj); }catch(e){} curSongObj=URL.createObjectURL(rec.blob); cb(curSongObj); } else cb(null); }); },
+      adSrc(url,cb){ get(STORE,'ad:'+url).then(function(rec){ if(rec&&rec.blob){ try{ if(curAdObj)URL.revokeObjectURL(curAdObj); }catch(e){} curAdObj=URL.createObjectURL(rec.blob); cb(curAdObj); } else cb(null); }); },
+      note(id,title){ if(db&&online&&!hasKey('song:'+id)&&reserve.length<TARGET) cacheSong(id,title); },
+      noteAd(url){ if(db&&online) cacheAd(url); },
+      showOffline(){ showBar(); }, hideOffline(){ hideBar(); },
+      stats(){ return {reserve:reserve.length, online:online, full:full, target:TARGET}; }
+    };
+  })();
 
   var CATALOG={variada:[['Amanecer en la Isla','Marejada Trío'],['Café y Calle','Los del Barrio'],['Brisa de Diciembre','Conjunto Aurora'],['Domingo de Plaza','Grupo Sol'],['Paso Fino','Orquesta Mayagüez']],retail:[['Ritmo del Mercado','Son Caribe'],['Vitrina','Dúo Metropol'],['Avenida','Los Faroles'],['Movida Buena','Banda Litoral']],restaurante:[['Mesa para Dos','Trío Marejada'],['Sobremesa','Quinteto Luna'],['Tarde Lenta','Grupo Sereno'],['Vino y Mar','Conjunto Bahía']],pico:[['Hora Pico','Son Caribe'],['Corre que Corre','Banda Litoral'],['Caja Abierta','Los Faroles'],['Fin de Mes','Orquesta Mayagüez']]};
   // sin anuncios de demostración: el cliente sube los suyos propios
@@ -530,14 +577,17 @@
       if(it.lib){
         stopBed(); var tok=++playToken;
         function playLib(d){ it.name=d.t||'Canción'; it.id=d.id; it.by='Librería Sisan'; showDeck(it); renderRows();
-          cur.isAudio=true; cur.el=musicEl; musicEl.src=API+'/audio/'+encodeURIComponent(d.id); musicEl.volume=vol; musicEl.onended=advance; musicEl.onerror=function(){ if(tok===playToken)advance(); }; musicEl.onplaying=function(){ var n=$('#nosnd'); if(n)n.hidden=true; }; musicEl.play().catch(function(){}); }
+          cur.isAudio=true; cur.el=musicEl; musicEl.volume=vol; musicEl.onended=advance; musicEl.onerror=function(){ if(tok===playToken)advance(); }; musicEl.onplaying=null;
+          if(OC.isOnline()){ musicEl.src=API+'/audio/'+encodeURIComponent(d.id); musicEl.play().catch(function(){}); OC.note(d.id,d.t); }
+          else { OC.songSrc(d.id,function(url){ if(tok!==playToken)return; if(url){ musicEl.src=url; musicEl.play().catch(function(){}); } else { advance(); } }); } }
         var pre=libAhead; libAhead=null; prefetchLib();
         if(pre&&pre.id){ cur.isAudio=true; cur.el=musicEl; playLib(pre); }   // síncrono: conserva el gesto del play -> sí suena
+        else if(!OC.isOnline()){ var rr=OC.nextReserve(); if(rr&&rr.id){ cur.isAudio=true; cur.el=musicEl; playLib(rr); } else { cur.total=DEMO_SONG; $('#title').textContent='Sin conexión'; $('#sub').textContent='Esperando que regrese el internet…'; OC.showOffline(); } }
         else { cur.total=DEMO_SONG; $('#title').textContent='Librería Sisan'; $('#sub').textContent='Buscando la próxima canción…';
           fetch(API+'/pista?mix='+encodeURIComponent(libMix)).then(function(r){return r.json();}).then(function(d){
             if(tok!==playToken||!playing)return;
             if(d&&d.id){ playLib(d); } else { advance(); }
-          }).catch(function(){ if(tok===playToken)advance(); }); }
+          }).catch(function(){ OC.goOffline(); var rr=OC.nextReserve(); if(tok!==playToken)return; if(rr&&rr.id){ cur.isAudio=true; cur.el=musicEl; playLib(rr); } else { advance(); } }); }
         return;
       }
       if(it.url){ stopBed(); cur.isAudio=true; cur.el=musicEl; musicEl.src=it.url; musicEl.volume=vol; musicEl.onended=advance; musicEl.onerror=advance; musicEl.play().catch(function(){}); }
@@ -545,7 +595,9 @@
     } else {
       stopBed();
       var a=it.ad;
-      if(a.type==='audio'){ cur.isAudio=true; cur.el=adEl; adEl.src=a.url; adEl.volume=Math.max(.8,vol); adEl.onended=advance; adEl.onerror=advance; adEl.play().catch(advance); }
+      if(a.type==='audio'){ cur.isAudio=true; cur.el=adEl; adEl.volume=Math.max(.8,vol); adEl.onended=advance; adEl.onerror=advance;
+        if(OC.isOnline()){ adEl.src=a.url; adEl.play().catch(advance); OC.noteAd(a.url); }
+        else { OC.adSrc(a.url,function(url){ if(url){ adEl.src=url; adEl.play().catch(advance); } else { advance(); } }); } }
       else { cur.total=DEMO_AD; /* anuncios de texto: NUNCA usar la voz del teléfono; solo suena audio boricua real */ }
     }
   }
@@ -708,6 +760,8 @@
     groups.push({id:nid(),name:'Especiales de Navidad',kind:'ad',members:[ads[2].id],mode:'shared',sch:{start:'2026-12-01',end:'2026-12-24',from:'',to:'',days:daysAll(),every:2}});
   })();
   wireBulk('music'); wireBulk('ad'); renderUploads(); renderAds(); renderSch(); renderGroups(); setSource('lib'); prefetchLib(); loadAccount();
+  OC.init();  // arranca la reserva local (caché offline) y el modo sin conexión
+  try{ window.__bpms={ oc:function(){return OC.stats();}, src:function(){return {music:(musicEl.currentSrc||musicEl.src), ad:(adEl.currentSrc||adEl.src)};} }; }catch(e){}
   // seguridad: pausar/parar el audio si el panel se oculta o se cierra (evita que siga sonando)
   try{
     document.addEventListener('visibilitychange', function(){ if(document.hidden && playing) pausePlay(); });
