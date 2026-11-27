@@ -330,13 +330,26 @@
         <div id="groupForm" hidden></div>
         <div id="groupList" style="margin-top:12px"></div>
       </div>
-      <div class="edu"><div class="eyebrow">CÓMO FUNCIONA</div><p>Cada canción y cada anuncio tiene el botón <b>⏱ Programar</b>: fecha de inicio y fin, días, hora y —en anuncios— frecuencia (cada N canciones). Para programar muchos de golpe, crea un <b>grupo</b>. Fuera de su ventana, el audio no entra en la rotación.</p></div>
+      <div class="edu"><div class="eyebrow">CÓMO FUNCIONA</div><p>Cada canción y cada anuncio tiene el botón <b>⏱ Programar</b>: fecha de inicio y fin, días y hora. Cuántas canciones suenan entre anuncios se ajusta arriba, en <b>Canciones entre anuncios</b>. Para programar muchos de golpe, crea un <b>grupo</b>. Fuera de su ventana, el audio no entra en la rotación.</p></div>
     </div>
 
     <div class="tabpanel" id="tab-anuncios" hidden>
       <div class="card">
+        <h3>Canciones entre anuncios</h3>
+        <p class="sub">Elige cuántas canciones suenan antes de cada anuncio. Aplica a toda la rotación y se guarda en este equipo.</p>
+        <div class="days" id="adgap" role="group" aria-label="Canciones entre anuncios">
+          <button type="button" data-gap="1">1</button>
+          <button type="button" data-gap="2">2</button>
+          <button type="button" data-gap="3" aria-pressed="true">3</button>
+          <button type="button" data-gap="4">4</button>
+          <button type="button" data-gap="5">5</button>
+          <button type="button" data-gap="6">6</button>
+        </div>
+        <p class="note" id="adgapNote" style="margin-top:10px"></p>
+      </div>
+      <div class="card">
         <h3>Tus anuncios</h3>
-        <p class="sub">Escoge tu locutor y crea tu anuncio, o sube uno tuyo en MP3. Programa cada uno con ⏱: fechas, días, horas y frecuencia (cada N canciones).</p>
+        <p class="sub">Escoge tu locutor y crea tu anuncio, o sube uno tuyo en MP3. Programa cada uno con ⏱: fechas, días y horas.</p>
         <a class="btn primary" href="locutor.html" target="_blank" rel="noopener" style="display:flex;width:100%;justify-content:center;margin-bottom:12px;text-decoration:none">🎙️ Crear anuncio</a>
         <label class="drop" for="adFile"><b>📢 …o sube tu anuncio (MP3)</b></label>
         <input id="adFile" type="file" accept="audio/*" multiple hidden>
@@ -401,6 +414,7 @@
   /* ===== estado ===== */
   var API="https://bpms-voice.beautygenaiapp.workers.dev";
   var playing=false, source='lib', ambiente='variada', libMix='variada';
+  var adGap=3; try{ var _g=parseInt(localStorage.getItem('bpms_adgap')||'3',10); if(_g>=1&&_g<=6) adGap=_g; }catch(e){}  // canciones entre anuncios
   var playToken=0;
   var libAhead=null;
   function prefetchLib(){ if(!OC.isOnline()){ var rr=OC.nextReserve(); if(rr) libAhead=rr; return; } try{ fetch(API+'/pista?mix='+encodeURIComponent(libMix)).then(function(r){return r.json();}).then(function(d){ if(d&&d.id) libAhead=d; }).catch(function(){ OC.goOffline(); var rr=OC.nextReserve(); if(rr) libAhead=rr; }); }catch(e){} }
@@ -505,7 +519,6 @@
     if(s.start||s.end) p.push('📅 '+(s.start||'…')+' → '+(s.end||'…'));
     var dd=DAYORDER.filter(function(k){return s.days&&s.days[k];}); if(dd.length<7) p.push(dd.map(function(k){return DAYL[k];}).join(''));
     if(s.from||s.to) p.push('🕒 '+(s.from||'00:00')+'–'+(s.to||'24:00'));
-    if(s.every&&s.every>1) p.push('cada '+s.every+' cxns');
     return p.length?p.join(' · '):'Suena siempre'; }
   function badge(item,kind){ var s=effSch(item,kind),st=schState(s),cls=st===true?'ok':(st==='pre'?'warn':'off'); return '<span class="chip '+cls+'">'+schLabel(st)+'</span> <span class="schsum">'+schSummary(s)+'</span>'; }
   function attachSched(box,obj,isAd,onChange){ if(!obj.sch)obj.sch=newSch(); var s=obj.sch;
@@ -515,7 +528,6 @@
       '<div><label class="fl">Hora desde</label><input type="time" data-k="from" value="'+s.from+'"></div>'+
       '<div><label class="fl">Hora hasta</label><input type="time" data-k="to" value="'+s.to+'"></div></div>'+
       '<label class="fl" style="margin-top:8px">Días que toca</label><div class="dayp">'+DAYORDER.map(function(k){return '<button type="button" data-day="'+k+'" aria-pressed="'+(s.days[k]?'true':'false')+'">'+DAYL[k]+'</button>';}).join('')+'</div>'+
-      (isAd?'<div class="freqrow"><label class="fl" style="margin:0">Frecuencia:</label> cada <input type="number" min="1" max="30" data-k="every" value="'+(s.every||1)+'"> canciones</div>':'')+
       '<button type="button" class="btn ghost sm sclear" style="margin-top:10px">Quitar programación (suena siempre)</button></div>';
     $$('input[data-k]',box).forEach(function(inp){ inp.addEventListener('change',function(){ var k=inp.dataset.k; obj.sch[k]=(k==='every'?Math.max(1,parseInt(inp.value||'1',10)):inp.value); onChange&&onChange(); }); });
     $$('[data-day]',box).forEach(function(b){ b.addEventListener('click',function(){ var on=b.getAttribute('aria-pressed')==='true'; b.setAttribute('aria-pressed',!on); obj.sch.days[b.dataset.day]=on?0:1; onChange&&onChange(); }); });
@@ -527,14 +539,14 @@
   function refreshBulk(kind){ var isAd=kind==='ad'; var items=isAd?ads:uploaded; var bar=$(isAd?'#bulkAd':'#bulkMus'); if(bar)bar.hidden=items.length<1; var n=selIds(kind).length; var c=$(isAd?'#adCnt':'#musCnt'); if(c)c.textContent=n+(isAd?(' seleccionado'+(n===1?'':'s')):(' seleccionada'+(n===1?'':'s'))); var btn=$(isAd?'#adSchedBtn':'#musSchedBtn'); if(btn)btn.disabled=n<1; }
   function wireBulk(kind){ var isAd=kind==='ad'; var selAll=$(isAd?'#adSelAll':'#musSelAll'); var btn=$(isAd?'#adSchedBtn':'#musSchedBtn'); var edBox=$(isAd?'#adBulkEdit':'#musBulkEdit'); var reRender=isAd?function(){renderAds();}:function(){renderUploads();};
     if(selAll) selAll.onclick=function(){ var all=isAd?ads:uploaded; var anyOff=all.some(function(it){return !sel[kind][it.id];}); all.forEach(function(it){ sel[kind][it.id]=anyOff; }); reRender(); };
-    if(btn) btn.onclick=function(){ if(edBox && !edBox.hidden){ edBox.hidden=true; return; } var tmp={sch:newSch()}; edBox.innerHTML='<label class="fl" style="margin-bottom:6px">Fecha / días / hora'+(isAd?' / frecuencia':'')+' para los seleccionados</label>'; var holder=document.createElement('div'); edBox.appendChild(holder); attachSched(holder,tmp,isAd,null); var apply=document.createElement('button'); apply.type='button'; apply.className='btn primary sm'; apply.style.marginTop='10px'; apply.textContent='✓ Aplicar a '+selIds(kind).length+' seleccionado(s)'; apply.onclick=function(){ var items=isAd?ads:uploaded; items.forEach(function(it){ if(sel[kind][it.id]) it.sch = tmp.sch?JSON.parse(JSON.stringify(tmp.sch)):null; }); edBox.hidden=true; sel[kind]={}; reRender(); buildQueue(); }; edBox.appendChild(apply); edBox.hidden=false; }; }
+    if(btn) btn.onclick=function(){ if(edBox && !edBox.hidden){ edBox.hidden=true; return; } var tmp={sch:newSch()}; edBox.innerHTML='<label class="fl" style="margin-bottom:6px">Fecha / días / hora para los seleccionados</label>'; var holder=document.createElement('div'); edBox.appendChild(holder); attachSched(holder,tmp,isAd,null); var apply=document.createElement('button'); apply.type='button'; apply.className='btn primary sm'; apply.style.marginTop='10px'; apply.textContent='✓ Aplicar a '+selIds(kind).length+' seleccionado(s)'; apply.onclick=function(){ var items=isAd?ads:uploaded; items.forEach(function(it){ if(sel[kind][it.id]) it.sch = tmp.sch?JSON.parse(JSON.stringify(tmp.sch)):null; }); edBox.hidden=true; sel[kind]={}; reRender(); buildQueue(); }; edBox.appendChild(apply); edBox.hidden=false; }; }
 
   function onTracks(){ return uploaded.filter(function(u){return u.on!==false;}); }
   function songsPool(){ if(source==='mine'){ return onTracks().filter(function(u){return activeNow(u,'music');}).map(function(u){return {kind:'song',name:(u.name||'').replace(/\.[^.]+$/,''),by:'Tu música',url:u.url,__item:u};}); } var slots=[]; for(var i=0;i<12;i++){ slots.push({kind:'song',lib:true,name:'Librería Sisan',by:'Librería Sisan'}); } return slots; }
   function adName(a){ return a.type==='audio'?a.name:(a.type==='text'?a.text.slice(0,30):(a.name||'Anuncio')); }
   function adsPool(){ return ads.filter(function(a){return a.on!==false && activeNow(a,'ad');}); }
   function buildQueue(){ var songs=songsPool(), ap=adsPool(), q=[], ai=0;
-    songs.forEach(function(s,idx){ q.push(s); var k=idx+1; var due=ap.filter(function(a){ var es=effSch(a,'ad'); var e=(es&&es.every)||3; return k%e===0; }); if(due.length){ var a=due[ai%due.length]; ai++; q.push({kind:'ad',ad:a,name:adName(a)}); } });
+    songs.forEach(function(s,idx){ q.push(s); var k=idx+1; if(ap.length && (k%adGap===0)){ var a=ap[ai%ap.length]; ai++; q.push({kind:'ad',ad:a,name:adName(a)}); } });
     queue=q; if(qi>=queue.length)qi=0; renderRows(); }
 
   function renderRows(){
@@ -627,6 +639,8 @@
 
   function setSource(s){ source=s; var sl=$('#src-lib'); if(sl) sl.hidden=s!=='lib'; var sm=$('#src-mine'); if(sm) sm.hidden=s!=='mine'; qi=0; buildQueue(); if(playing)playItem(); }
   $('#amb').addEventListener('click',function(e){ var b=e.target.closest('button[data-g]'); if(!b)return; $$('#amb button').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')}); var g=b.dataset.g; libMix=(g==='variada')?'variada':(g+':100'); libAhead=null; prefetchLib(); qi=0; buildQueue(); if(playing)playItem(); saveMusicMix(); });
+  function applyAdGapUI(){ $$('#adgap button').forEach(function(x){ x.setAttribute('aria-pressed', parseInt(x.dataset.gap,10)===adGap?'true':'false'); }); var n=$('#adgapNote'); if(n) n.textContent = (adGap===1) ? 'Suena 1 anuncio después de cada canción.' : ('Suena 1 anuncio cada '+adGap+' canciones.'); }
+  var _ag=$('#adgap'); if(_ag) _ag.addEventListener('click',function(e){ var b=e.target.closest('button[data-gap]'); if(!b)return; adGap=Math.max(1,Math.min(6,parseInt(b.dataset.gap,10)||3)); try{ localStorage.setItem('bpms_adgap', String(adGap)); }catch(e2){} applyAdGapUI(); buildQueue(); });
   function acctTok(){ try{ return localStorage.getItem('bpms_tok')||''; }catch(e){ return ''; } }
   function saveMusicMix(){ var t=acctTok(); if(!t)return; try{ fetch(API+'/music/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t,mix:libMix})}); }catch(e){} }
   function applyLibMix(){ var g=(libMix==='variada')?'variada':libMix.split(':')[0]; $$('#amb button').forEach(function(x){ x.setAttribute('aria-pressed', x.dataset.g===g?'true':'false'); }); }
@@ -759,7 +773,7 @@
     // grupo de ejemplo: anuncio de temporada programado para Navidad (todos a la vez)
     groups.push({id:nid(),name:'Especiales de Navidad',kind:'ad',members:[ads[2].id],mode:'shared',sch:{start:'2026-12-01',end:'2026-12-24',from:'',to:'',days:daysAll(),every:2}});
   })();
-  wireBulk('music'); wireBulk('ad'); renderUploads(); renderAds(); renderSch(); renderGroups(); setSource('lib'); prefetchLib(); loadAccount();
+  wireBulk('music'); wireBulk('ad'); renderUploads(); renderAds(); renderSch(); renderGroups(); applyAdGapUI(); setSource('lib'); prefetchLib(); loadAccount();
   OC.init();  // arranca la reserva local (caché offline) y el modo sin conexión
   try{ window.__bpms={ oc:function(){return OC.stats();}, src:function(){return {music:(musicEl.currentSrc||musicEl.src), ad:(adEl.currentSrc||adEl.src)};} }; }catch(e){}
   // seguridad: pausar/parar el audio si el panel se oculta o se cierra (evita que siga sonando)
