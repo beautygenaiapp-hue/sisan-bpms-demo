@@ -113,6 +113,23 @@
       <div class="foot">La música que pasa el filtro entra sola al repertorio. Aquí puedes escuchar lo que quedó en revisión, aprobarlo o quitar cualquier canción (incluido el reguetón que se cuele).</div>
     </div>
 
+    <!-- Jingles -->
+    <div class="card">
+      <h2>Jingles (camas musicales)</h2>
+      <div class="foot" style="margin-bottom:12px">Sube tus jingles con licencia. Aparecen en el creador de anuncios para que los clientes los escojan como música de fondo. Máx 12&nbsp;MB por archivo.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label>Nombre</label><input id="jkName" placeholder="Ej. Navidad Cálida"></div>
+        <div><label>Género</label><input id="jkGenre" placeholder="Navidad, Corporativo, Electrónico…"></div>
+        <div><label>Mood (opcional)</label><input id="jkMood" placeholder="Festivo, Relajado…"></div>
+        <div><label>Energía (opcional)</label><input id="jkEnergy" placeholder="Alta, Media, Baja"></div>
+      </div>
+      <label style="margin-top:8px">Archivo de audio (MP3 o WAV)</label>
+      <input id="jkFile" type="file" accept="audio/*">
+      <div class="mt"><button id="btnJingleUp">Subir jingle</button> <button class="ghost sm" id="btnJingleReload">Refrescar lista</button></div>
+      <div class="msg" id="jingleMsg"></div>
+      <div id="jingleWrap" class="muted mt">Cargando…</div>
+    </div>
+
     <p class="foot">Sesión guardada solo en este navegador. <a href="#" id="logout" style="color:var(--acc)">Cerrar sesión</a></p>
   </div>
 </div>
@@ -173,7 +190,46 @@ async function doLogin(){
   document.getElementById("app").classList.remove("hidden");
   loadClients();
   loadMusic();
+  loadJingles();
 }
+
+// ---- Jingles ----
+let _jprev = new Audio();
+async function loadJingles(){
+  const wrap=document.getElementById('jingleWrap'); if(!wrap)return; wrap.innerHTML='<span class="muted">Cargando…</span>';
+  const r=await api('/admin/jingles/list');
+  const js=(r.ok&&r.data&&r.data.jingles)||[];
+  if(!js.length){ wrap.innerHTML='<span class="muted">Aún no hay jingles.</span>'; return; }
+  let h='<div style="overflow-x:auto"><table><thead><tr><th>Nombre</th><th>Género</th><th>Mood</th><th>Energía</th><th></th><th></th></tr></thead><tbody>';
+  js.slice().reverse().forEach(function(j){
+    h+='<tr><td>'+esc(j.name)+'</td><td>'+esc(j.genre)+'</td><td class="muted">'+esc(j.mood||'—')+'</td><td class="muted">'+esc(j.energy||'—')+'</td>'
+      +'<td><button class="ghost sm" onclick="previewJingle(\''+j.id+'\')">▶ Oír</button></td>'
+      +'<td><button class="ghost sm" onclick="removeJingle(\''+j.id+'\',\''+esc(j.name).replace(/\\\'/g,"")+'\')">Quitar</button></td></tr>';
+  });
+  h+='</tbody></table></div>';
+  wrap.innerHTML=h;
+}
+function previewJingle(id){ try{_jprev.pause();}catch(e){} _jprev.src=API+'/jingle/audio/'+id; _jprev.currentTime=0; _jprev.play().catch(function(){}); }
+async function uploadJingle(){
+  const m=document.getElementById('jingleMsg');
+  const f=(document.getElementById('jkFile').files||[])[0];
+  const name=document.getElementById('jkName').value.trim();
+  if(!f){ show(m,'Elige un archivo de audio.',false); return; }
+  if(!name){ show(m,'Ponle un nombre al jingle.',false); return; }
+  if(f.size>12*1024*1024){ show(m,'El archivo es muy grande (máx 12 MB).',false); return; }
+  show(m,'Subiendo…',true);
+  const u8=new Uint8Array(await f.arrayBuffer()); let bin='',CH=0x8000;
+  for(let i=0;i<u8.length;i+=CH){ bin+=String.fromCharCode.apply(null,u8.subarray(i,i+CH)); }
+  const res=await api('/admin/jingles/add',{method:'POST',body:JSON.stringify({
+    audio_b64:btoa(bin), ct:(f.type||'audio/mpeg'), name:name,
+    genre:document.getElementById('jkGenre').value.trim()||'General',
+    mood:document.getElementById('jkMood').value.trim(),
+    energy:document.getElementById('jkEnergy').value.trim()
+  })});
+  if(res.ok&&res.data&&res.data.ok){ show(m,'Jingle subido y disponible en el creador.',true); document.getElementById('jkFile').value=''; document.getElementById('jkName').value=''; document.getElementById('jkMood').value=''; document.getElementById('jkEnergy').value=''; loadJingles(); }
+  else show(m,'Error: '+((res.data&&res.data.error)||res.status),false);
+}
+async function removeJingle(id,name){ if(!confirm('¿Quitar el jingle "'+name+'"? Dejará de aparecer en el creador.'))return; const res=await api('/admin/jingles/remove',{method:'POST',body:JSON.stringify({id:id})}); const m=document.getElementById('jingleMsg'); if(res.ok){ show(m,'Jingle quitado.',true); loadJingles(); } else show(m,'Error.',false); }
 
 // ---- Música aportada ----
 let MUSIC_GENRES=[];
@@ -238,6 +294,8 @@ document.getElementById("btnCredit").onclick=async()=>{
 
 document.getElementById("btnReload").onclick=loadClients;
 document.getElementById("btnMusicReload").onclick=loadMusic;
+document.getElementById("btnJingleUp").onclick=uploadJingle;
+document.getElementById("btnJingleReload").onclick=loadJingles;
 document.getElementById("logout").onclick=(e)=>{ e.preventDefault(); try{localStorage.removeItem("bpms_adm");}catch(e){} location.reload(); };
 
 // auto-login si hay token guardado

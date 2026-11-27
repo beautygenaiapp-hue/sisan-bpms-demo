@@ -128,7 +128,16 @@
       <h2>4 · Música de fondo (opcional)</h2>
       <div class="tones" id="musicModes">
         <div class="tone sel" data-mm="none">Sin música</div>
+        <div class="tone" data-mm="bank">🎵 Del banco Sisan</div>
         <div class="tone" data-mm="jingle">Subir mi jingle</div>
+      </div>
+      <div id="bankBox" class="hidden" style="margin-top:14px">
+        <label>Filtra por tipo</label>
+        <select id="bankGenre" style="width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:10px"><option value="">Todos los tipos</option></select>
+        <div id="bankList" style="max-height:280px;overflow:auto;margin-top:10px"></div>
+        <label style="margin-top:8px">Volumen de la música: <span id="mlvl2">20%</span></label>
+        <input type="range" id="mrange2" min="5" max="60" value="20">
+        <div class="foot" style="margin-top:8px">Jingles originales de Sisan, sin regalías. La mezcla se hace en tu navegador.</div>
       </div>
       <div id="jingleBox" class="hidden" style="margin-top:14px">
         <label>Tu archivo de música (MP3)</label>
@@ -142,7 +151,7 @@
     <div class="card">
       <div class="gen-row">
         <button id="btnGen">Generar anuncio</button>
-        <span class="foot" id="genHint">Si subes tu jingle en el paso 4, se mezcla con la voz automáticamente al generar.</span>
+        <span class="foot" id="genHint">Elige un jingle del banco Sisan (o sube el tuyo) en el paso 4 y se mezcla con la voz al generar.</span>
       </div>
       <div class="msg" id="genMsg"></div>
       <div class="result" id="result">
@@ -242,6 +251,7 @@ function findBad(text){
 
 let TOKEN="", voiceId=VOICES[0].id, toneKey="energico", BAL=0;
 let musicMode="none", jingleFile=null, musicLevel=0.20;
+let bankJingle=null, bankJingles=[], bankAudio=new Audio();
 
 function show(el,t,cls){ el.textContent=t; el.className="msg show "+cls; }
 function hide(el){ el.className="msg"; }
@@ -357,6 +367,8 @@ async function doGenerate(){
     if(!jingleFile){ show(m,"Escogiste “Subir mi jingle” pero no has elegido el archivo. Súbelo o escoge “Sin música”.","err"); return; }
     if(!document.getElementById('jrights').checked){ show(m,"Marca la casilla de que tienes los derechos del jingle para continuar.","err"); return; }
   }
+  if(musicMode==='bank' && !bankJingle){ show(m,"Elige un jingle del banco Sisan o escoge “Sin música”.","err"); return; }
+  try{ bankAudio.pause(); }catch(e){}
 
   const btn=document.getElementById("btnGen");
   btn.disabled=true; if(rr) rr.disabled=true;
@@ -386,6 +398,18 @@ async function doGenerate(){
       }catch(err){
         finalBlob=voiceBlob;
         musicNote=" (No pude mezclar ese archivo — te di la voz sola. Prueba con un MP3.)";
+      }
+    }
+    else if(musicMode==='bank' && bankJingle){
+      try{
+        btn.innerHTML='<span class="spin"></span>Mezclando música…';
+        const vArr=await voiceBlob.arrayBuffer();
+        const jbuf=await (await fetch(bankJingle.url)).arrayBuffer();
+        finalBlob=await mixVoiceWithMusic(vArr, jbuf, musicLevel);
+        musicNote=" Con música de fondo del banco Sisan.";
+      }catch(err){
+        finalBlob=voiceBlob;
+        musicNote=" (No pude mezclar el jingle — te di la voz sola.)";
       }
     }
     const url=URL.createObjectURL(finalBlob);
@@ -439,9 +463,37 @@ document.querySelectorAll('#musicModes .tone').forEach(el=>{
     musicMode=el.dataset.mm;
     document.querySelectorAll('#musicModes .tone').forEach(x=>x.classList.toggle('sel', x===el));
     document.getElementById('jingleBox').classList.toggle('hidden', musicMode!=='jingle');
+    document.getElementById('bankBox').classList.toggle('hidden', musicMode!=='bank');
+    if(musicMode!=='bank'){ try{ bankAudio.pause(); }catch(e){} }
   };
 });
 document.getElementById('jingleInput').addEventListener('change',e=>{ jingleFile=(e.target.files&&e.target.files[0])||null; });
+
+// --- Banco de jingles Sisan ---
+async function loadBank(){
+  try{ const r=await fetch(API+'/jingles/list'); const d=await r.json(); if(d&&d.ok){ bankJingles=d.jingles||[]; renderBank(); } }catch(e){}
+}
+function renderBank(){
+  const gsel=document.getElementById('bankGenre'); const list=document.getElementById('bankList'); if(!gsel||!list) return;
+  if(gsel.options.length<=1){ [...new Set(bankJingles.map(j=>j.genre))].forEach(g=>{ const o=document.createElement('option'); o.value=g; o.textContent=g; gsel.appendChild(o); }); }
+  const fg=gsel.value; list.innerHTML='';
+  const items=bankJingles.filter(j=>!fg||j.genre===fg);
+  if(!items.length){ list.innerHTML='<div class="foot">No hay jingles todavía.</div>'; return; }
+  items.forEach(j=>{
+    const on=bankJingle&&bankJingle.id===j.id;
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:10px;padding:10px;border:1.5px solid '+(on?'var(--acc)':'var(--line)')+';border-radius:10px;margin-bottom:7px;cursor:pointer;background:var(--panel2)';
+    row.innerHTML='<button type="button" class="jprev" style="background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:6px 10px;font-size:13px;flex:none">▶</button>'
+      +'<div style="flex:1;min-width:0"><b>'+j.name+'</b><div class="foot">'+j.genre+(j.mood?' · '+j.mood:'')+(j.energy?' · '+j.energy:'')+'</div></div>'
+      +'<span style="font-size:13px;color:'+(on?'var(--acc)':'var(--mut)')+';flex:none">'+(on?'✓ Elegido':'Elegir')+'</span>';
+    row.querySelector('.jprev').onclick=(ev)=>{ ev.stopPropagation(); try{ bankAudio.pause(); }catch(e){} bankAudio.src=API+j.url; bankAudio.currentTime=0; bankAudio.play().catch(()=>{}); };
+    row.onclick=()=>{ bankJingle={id:j.id,name:j.name,url:API+j.url}; renderBank(); };
+    list.appendChild(row);
+  });
+}
+(function(){ const g=document.getElementById('bankGenre'); if(g) g.addEventListener('change',renderBank);
+  const mr2=document.getElementById('mrange2'); if(mr2) mr2.addEventListener('input',()=>{ musicLevel=mr2.value/100; document.getElementById('mlvl2').textContent=mr2.value+'%'; }); })();
+loadBank();
 (function(){ const mr=document.getElementById('mrange'); mr.addEventListener('input',()=>{ musicLevel=mr.value/100; document.getElementById('mlvl').textContent=mr.value+'%'; }); })();
 
 function floatTo16(f){ const o=new Int16Array(f.length); for(let i=0;i<f.length;i++){ let s=Math.max(-1,Math.min(1,f[i])); o[i]= s<0 ? s*0x8000 : s*0x7FFF; } return o; }
